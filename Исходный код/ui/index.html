@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Локальное рабочее место завуча: расписание школы, замены и печать по дням.">
+  <title>Параллель · Расписание школы</title>
+  <link rel="stylesheet" href="style.css?v=2">
+  <link rel="stylesheet" href="dispatcher.css?v=2">
+  <link rel="stylesheet" href="compact.css?v=32">
+  <link rel="stylesheet" href="workbench.css?v=40">
+</head>
+<body>
+<a class="skip" href="#content">К расписанию</a>
+<div class="app-shell">
+<aside class="sidebar no-print">
+  <div class="brand"><svg width="32" height="32" viewBox="0 0 32 32" fill="none" aria-label="Параллель"><path d="M5 5h9v22H5zm13 0h9v9h-9zm0 13h9v9h-9z" stroke="currentColor" stroke-width="2"/><path d="M9 10h1m12 13h1" stroke="currentColor" stroke-width="2"/></svg><div>Параллель<small>РАБОЧЕЕ МЕСТО ЗАВУЧА</small></div></div>
+  <nav id="navigation" aria-label="Главное меню"></nav>
+  <div class="sidebar-bottom"><span class="privacy-dot"></span> Локальная работа<p>Изменения не отправляются в ВШ. Сохраняйте рабочий файл перед закрытием.</p><button id="theme" class="text-button" data-testid="button-theme">Сменить тему</button></div>
+</aside>
+<div class="main-wrap">
+  <header class="topbar no-print"><div><span id="school-label">Расписание школы</span><small id="year-label">2026 / 2027</small></div><div class="top-actions"><span id="save-state" role="status">В памяти вкладки</span><button id="open-file" data-testid="button-open">Открыть JSON</button><button id="save-file" class="primary" data-testid="button-save">Сохранить файл</button><input id="file" type="file" accept=".json,application/json" hidden></div></header>
+  <main id="content" tabindex="-1">
+    <div id="import-notice" class="notice no-print"></div>
+    <section class="page-heading"><div><div class="eyebrow">ДИСПЕТЧЕРСКАЯ</div><h1 id="page-title">Расписание</h1><p id="page-description">Вся школа в одном расписании. Базовые уроки и изменения на выбранную дату.</p></div><div id="heading-actions" class="no-print"></div></section>
+    <div id="message" role="status" class="message" hidden></div>
+    <section id="controls" class="no-print"></section>
+    <section id="view"></section>
+  </main>
+  <footer class="no-print"><span>Параллель · Рабочий файл школы</span><span>Без автоматической синхронизации с ВШ</span></footer>
+</div>
+</div>
+<dialog id="dialog"><div id="dialog-content"></div></dialog>
+<div id="print-root"></div>
+<script src="desktop-bridge.js"></script><script src="room-engine.js?v=40"></script><script src="engine.js?v=40"></script><script src="workbench-engine.js?v=40"></script><script src="app.js?v=40"></script><script src="dispatcher.js?v=40"></script><script src="rooms.js?v=40"></script><script src="print-tools.js?v=40"></script><script src="compact.js?v=40"></script><script src="profiles.js?v=40"></script><script src="html2canvas.min.js"></script><script src="jspdf.umd.min.js"></script><script src="docx.iife.js"></script><script src="word-export.js?v=40"></script><script src="printing.js?v=40"></script><script src="workbench.js?v=40"></script><script src="room-preferences.js?v=40"></script><script src="desktop.js"></script>
+</body></html>

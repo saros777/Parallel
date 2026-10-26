@@ -1,0 +1,21 @@
+const assert=require('assert'),E=require('./ui/engine.js');
+const fs=require('fs');
+const lesson=(id,cls,slot,teacher,subject='s1')=>({id,classId:cls,date:'2026-09-21',slot,time:`${String(7+slot).padStart(2,'0')}:00 - ${String(7+slot).padStart(2,'0')}:45`,teacherId:teacher,subjectId:subject,roomId:null});
+function db(){return {meta:{schemaVersion:'1.0'},classes:[{id:'c1',name:'1а'},{id:'c2',name:'2а'}],teachers:[{id:'t1',name:'A'},{id:'t2',name:'B'},{id:'t3',name:'C'}],subjects:[{id:'s1',name:'Математика'}],teacherSubjects:[{teacherId:'t1',subjectId:'s1'},{teacherId:'t2',subjectId:'s1'},{teacherId:'t3',subjectId:'s1'}],rooms:[],calendar:[],lessons:[lesson('a','c1',1,'t1'),lesson('b','c1',2,'t1'),lesson('c','c2',1,'t2')],absences:[],overrides:{}}}
+let d=db();d.absences=[{teacherId:'t1',startDate:'2026-09-21',endDate:'2026-09-21',startSlot:1,endSlot:1}];
+assert(E.absenceFor(d.lessons[0],d));assert(!E.absenceFor(d.lessons[1],d));
+let out=E.optimize(d,'2026-09-21',{compact:false});assert.equal(out.patches.length,1);assert.equal(out.patches[0].after.teacherId,'t3');assert.equal(out.errors.length,0);
+d=db();d.absences=d.teachers.map(t=>({teacherId:t.id,startDate:'2026-09-21',endDate:'2026-09-21'}));
+out=E.optimize(d,'2026-09-21',{cancelUnresolved:false,compact:false});assert.equal(out.unresolved.length,3);assert.equal(out.patches.length,0);
+out=E.optimize(d,'2026-09-21',{cancelUnresolved:true,compact:false});assert.equal(out.patches.length,3);assert(out.patches.every(p=>p.after.cancelled));assert.equal(out.errors.length,0);
+d=db();d.lessons[0].locked=true;d.absences=[{teacherId:'t1',startDate:'2026-09-21',endDate:'2026-09-21'}];
+out=E.optimize(d,'2026-09-21',{cancelUnresolved:true,compact:false});assert(out.unresolved.some(x=>x.id==='a'));
+d=db();let swap=E.transfer(d,'a','2026-09-21',2);assert.equal(swap.length,2);assert.equal(E.newIssues(d,swap).length,0);
+d.lessons[1].locked=true;assert.throws(()=>E.transfer(d,'a','2026-09-21',2));
+d=db();d.lessons[1].teacherId='t2';assert.throws(()=>E.transfer(d,'a','2026-09-21',2));
+d=db();d.overrides.a={cancelled:true};out=E.optimize(d,'2026-09-21',{compact:true});assert(out.patches.some(x=>x.id==='b'&&x.after.slot===1));assert.equal(out.errors.length,0);
+d=db();d.lessons[0].groupName='1';d.lessons.push({...d.lessons[0],id:'a2',groupName:'2',teacherId:'t3'});swap=E.transfer(d,'a','2026-09-21',2);assert.equal(swap.length,3);assert.equal(swap.filter(x=>x.after.slot===2).length,2);
+const real=JSON.parse(fs.readFileSync('./seed.json'));
+real.overrides={};real.absences=[];const timed=Date.now();
+out=E.optimize(real,'2026-09-21',{compact:true});assert.equal(out.errors.length,0);
+console.log({tests:'passed',realRecalculationMs:Date.now()-timed,realMoves:out.patches.length,unresolved:out.unresolved.length});

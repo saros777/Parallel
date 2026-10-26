@@ -1,0 +1,38 @@
+/* Fixed-pixel school grid: day and week use the same compact card size. */
+.matrix-scroll.wb-board{width:max-content;max-width:100%;min-height:0;max-height:max(240px,calc(100vh - 440px));border-radius:0}
+.matrix-scroll.wb-board .matrix{width:auto;min-width:0!important}
+.matrix-scroll.wb-board .matrix .entity-col{width:auto;min-width:0;font-size:12px}
+.wb-board .matrix .lesson,.wb-board .matrix .lesson.compact-card{border-radius:0;min-height:25px!important;margin:0;padding:2px!important;border:0;line-height:1.1}
+.wb-board .matrix .lesson strong,.wb-board .matrix .compact-room{font-size:12px!important;line-height:1.1!important;white-space:nowrap!important;overflow:hidden!important;text-overflow:ellipsis;word-break:normal!important;overflow-wrap:normal!important}
+.wb-board .matrix .lesson strong{display:block;min-width:0}
+.wb-board .matrix .compact-line{align-items:center;gap:2px}
+.wb-board .matrix .compact-room{border:0;padding:0!important;min-width:0;font-size:12px;background:none}
+.wb-board .matrix .empty-slot{min-height:25px;height:25px}
+.wb-board .matrix .divided-slot>.lesson{min-height:14px!important;padding:0 2px!important}
+.wb-board .matrix .profile-slot .profile-lane{padding-left:16px;min-height:14px}
+.wb-board .matrix .profile-slot .lesson{min-height:14px!important;padding:0 2px!important}
+.wb-board .profile-empty{line-height:14px}
+.wb-board .profile-lane-label{font-size:8px;top:5px}
+.wb-board .compact-status,.wb-board .lesson.changed:after,.wb-board .lesson .tag{display:none!important}
+.wb-board .wb-conflict{box-shadow:inset 2px 0 #b51f3d}
+.wb-board td.wb-cross,.wb-board th.wb-cross{background:#dceaff}
+.wb-board td.wb-cross .lesson{background:color-mix(in srgb,var(--subject-color) 85%,#c1d9ff)}
+.wb-board td.wb-active-cell{outline:2px solid #1b5ac3;outline-offset:-2px}
+.wb-board td.wb-drop-ok{box-shadow:inset 0 0 0 2px #2e7956}
+.wb-board td.wb-drop-warn{box-shadow:inset 0 0 0 2px #ad6213;background:repeating-linear-gradient(135deg,#fff5df 0 5px,#ecd8b9 5px 7px)}
+.wb-board td.wb-drop-block{opacity:.48}
+.wb-board td.wb-drop-hover,#wb-tray.wb-drop-hover{outline:3px solid #255ece;outline-offset:-3px}
+.wb-size{display:flex;align-items:center;gap:5px;font-size:12px}
+#wb-tray{border:1px dashed #8da2b8;background:var(--surface);padding:10px;margin-top:10px;max-height:150px;overflow:auto;position:sticky;bottom:0;z-index:7}
+#wb-tray header{display:flex;gap:15px;align-items:baseline;font-size:13px}
+#wb-tray header small,#wb-drag-note{font-size:12px;color:var(--muted)}
+.wb-tray-cards{display:flex;gap:8px;flex-wrap:wrap;min-height:42px;padding-top:6px}
+.wb-tray-cards>p{font-size:12px;color:var(--muted)}
+.wb-parked{width:145px}.wb-parked>small{font-size:11px}.wb-parked .lesson{background:var(--subject-color);color:#203047;width:100%;border-radius:0;padding:4px;min-height:28px}
+#wb-tooltip{position:fixed;z-index:10000;background:#172c44;color:white;padding:8px 11px;max-width:min(520px,94vw);font-size:13px;box-shadow:0 2px 12px #0003;border-radius:4px;pointer-events:none}
+.wb-warning{padding:12px;background:var(--warn-bg);border:1px solid var(--warn);color:var(--text)}
+.room-order{width:180px;max-width:100%}.room-directory th{position:sticky;top:0;background:var(--surface)}
+.print-grade-band td,.print-grade-band th{background:#f0f3f5!important}
+[data-theme=dark] .wb-board td.wb-cross,[data-theme=dark] .wb-board th.wb-cross{background:#2b405c}
+[data-theme=dark] .wb-board td.wb-cross .lesson{background:color-mix(in srgb,var(--subject-color) 40%,#172c44)}
+@media(max-width:700px){#wb-tray{position:static}#wb-tray header{display:block}.wb-parked{width:125px}}
