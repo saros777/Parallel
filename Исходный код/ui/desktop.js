@@ -1,7 +1,7 @@
 /* Desktop UX: all data remain on this computer, not in a cloud preview. */
-$('.brand small').textContent='ВЕРСИЯ 5.1 · ДИСПЕТЧЕР';
+$('.brand small').textContent='ВЕРСИЯ 5.2 · ДИСПЕТЧЕР';
 titles.data=['База и резервные копии','Автосохранение на вашем компьютере'];
-$('footer').innerHTML='<span>Параллель 5.1 · На вашем компьютере · Без подключения к ВШ</span><button id="exit-application">Сохранить и выйти</button>';
+$('footer').innerHTML='<span>Параллель 5.2 · На вашем компьютере · Без подключения к ВШ</span><button id="exit-application">Сохранить и выйти</button>';
 const desktopStatus=renderStatus;
 renderStatus=function(){
  desktopStatus();

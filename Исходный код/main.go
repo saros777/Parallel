@@ -24,12 +24,12 @@ import (
 	"time"
 )
 
-// No runtime libraries, external services, or installed Python are required.
+// Application assets are local; native Windows uses the system WebView2 Runtime.
 //
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "5.1.0"
+const version = "5.2.0"
 const appID = "parallel-school-desktop"
 
 type Envelope struct {

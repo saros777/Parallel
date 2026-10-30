@@ -1,3 +1,4 @@
+!error "Installer 5.1 was withdrawn. Use build/windows/build.ps1 to build the MSI installer."
 Unicode True
 !include "MUI2.nsh"
 !include "LogicLib.nsh"

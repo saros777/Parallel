@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
+  <Package Name="Параллель 5.2" Manufacturer="Параллель" Version="5.2.0" Language="1049"
+           UpgradeCode="D4173FA9-78AA-4AD3-90DC-56F168DC94D5" Scope="perUser" InstallerVersion="500" Codepage="1251">
+    <SummaryInformation Description="Расписание школы — самостоятельное приложение Windows" />
+    <MajorUpgrade DowngradeErrorMessage="Уже установлена более новая версия Параллель." />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="mszip" />
+    <Property Id="WINBUILD">
+      <RegistrySearch Id="WindowsBuild" Root="HKLM" Key="SOFTWARE\Microsoft\Windows NT\CurrentVersion" Name="CurrentBuildNumber" Type="raw" Bitness="always64" />
+    </Property>
+    <Launch Condition="Installed OR (VersionNT64 AND WINBUILD &gt;= 10240)" Message="Нужна 64-разрядная Windows 10 или выше." />
+    <Icon Id="ParallelIcon" SourceFile="$(var.SourceDir)\build\windows\app.ico" />
+    <Property Id="ARPPRODUCTICON" Value="ParallelIcon" />
+    <Property Id="ARPHELPLINK" Value="https://github.com/saros777/Parallel" />
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="UserPrograms" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="ParallelDesktop">
+          <Component Id="Application" Guid="A8553CA3-E5ED-40A0-A33E-55CB5C59A511">
+            <File Id="ParallelExe" Source="$(var.DistDir)\Parallel.exe" />
+            <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="Application" Value="5.2.0" Type="string" KeyPath="yes" />
+          </Component>
+          <Component Id="MicrosoftRuntimeSetup" Guid="55DF31DB-9B13-412A-9485-FBA154A3473B">
+            <File Id="MicrosoftRuntimeExe" Source="$(var.DistDir)\MicrosoftEdgeWebview2Setup.exe" />
+            <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="RuntimeSetup" Value="5.2.0" Type="string" KeyPath="yes" />
+          </Component>
+        </Directory>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ParallelMenu" Name="Параллель">
+        <Component Id="MenuShortcut" Guid="1E86AF89-F64E-4F9F-9515-DC7F93203263">
+          <Shortcut Id="StartShortcut" Name="Параллель" Description="Расписание школы" Target="[INSTALLFOLDER]Parallel.exe" WorkingDirectory="INSTALLFOLDER" Icon="ParallelIcon" />
+          <RemoveFolder Id="RemoveMenu" On="uninstall" />
+          <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="MenuShortcut" Value="1" Type="integer" KeyPath="yes" />
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <StandardDirectory Id="DesktopFolder">
+      <Component Id="DesktopShortcut" Guid="C14B7D39-64A4-46B1-B694-09DDB6781E40">
+        <Shortcut Id="DesktopLink" Name="Параллель" Description="Расписание школы" Target="[INSTALLFOLDER]Parallel.exe" WorkingDirectory="INSTALLFOLDER" Icon="ParallelIcon" />
+        <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="DesktopShortcut" Value="1" Type="integer" KeyPath="yes" />
+      </Component>
+    </StandardDirectory>
+    <Feature Id="Complete" Title="Параллель" Level="1">
+      <ComponentRef Id="Application" />
+      <ComponentRef Id="MicrosoftRuntimeSetup" />
+      <ComponentRef Id="MenuShortcut" />
+      <ComponentRef Id="DesktopShortcut" />
+    </Feature>
+    <ui:WixUI Id="WixUI_InstallDir" InstallDirectory="INSTALLFOLDER" />
+    <UI>
+      <!-- No invented EULA: the project has no licence agreement to accept. -->
+      <Publish Dialog="WelcomeDlg" Control="Next" Event="NewDialog" Value="InstallDirDlg" Order="3" Condition="NOT Installed" />
+      <Publish Dialog="InstallDirDlg" Control="Back" Event="NewDialog" Value="WelcomeDlg" Order="3" Condition="1" />
+    </UI>
+  </Package>
+</Wix>

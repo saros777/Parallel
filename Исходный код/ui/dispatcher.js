@@ -281,7 +281,9 @@ async function boot(){
   $('#retry-boot').onclick=boot;
  }
 }
-boot();
+// Later scripts install the schedule, directory and native-window handlers.
+// Wait for all of them even when the local IPC response arrives immediately.
+document.addEventListener('DOMContentLoaded',boot,{once:true});
 document.addEventListener('keydown',e=>{
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='s'){e.preventDefault();connected?persist():save()}
  if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!['INPUT','TEXTAREA','SELECT'].includes(e.target.tagName)&&!$('#dialog').open){e.preventDefault();undo()}

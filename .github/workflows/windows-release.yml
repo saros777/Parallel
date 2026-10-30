@@ -1,0 +1,97 @@
+name: Windows MSI release
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/parallel-5.2-desktop]
+    paths:
+      - '.github/workflows/windows-release.yml'
+      - 'Исходный код/**'
+permissions:
+  contents: read
+concurrency:
+  group: windows-msi-release
+  cancel-in-progress: false
+jobs:
+  build-scan-install:
+    runs-on: windows-2022
+    timeout-minutes: 25
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - name: Require active Defender and current signatures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $service = Get-Service WinDefend
+          if ($service.Status -ne 'Running') { Set-Service WinDefend -StartupType Automatic; Start-Service WinDefend }
+          Set-MpPreference -SubmitSamplesConsent 2
+          Update-MpSignature
+          $s = Get-MpComputerStatus
+          if (-not $s.AMServiceEnabled -or -not $s.AntivirusEnabled) { throw 'Defender unavailable; release blocked' }
+      - name: Go and schedule regression tests
+        shell: pwsh
+        working-directory: Исходный код
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            go mod verify
+            if ($LASTEXITCODE -ne 0) { throw 'Module integrity verification failed' }
+            go test -mod=vendor ./...
+            if ($LASTEXITCODE -ne 0) { throw 'Go tests failed' }
+            go vet -mod=vendor ./...
+            if ($LASTEXITCODE -ne 0) { throw 'Go vet failed' }
+            foreach ($file in Get-ChildItem test_*.cjs) {
+              node $file.FullName
+              if ($LASTEXITCODE -ne 0) { throw "Schedule test failed: $($file.Name)" }
+            }
+          } catch { Write-Output "::error title=Regression tests failed::$($_.Exception.Message)"; throw }
+      - name: Build standard MSI from pinned sources and tooling
+        shell: pwsh
+        working-directory: Исходный код
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try {
+            ./build/windows/build.ps1
+            if ($LASTEXITCODE -ne 0) { throw 'MSI build failed' }
+            $first = (Get-FileHash dist/Parallel.exe).Hash
+            go build -mod=vendor -buildvcs=false -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel-reproduced.exe .
+            if ($LASTEXITCODE -ne 0 -or (Get-FileHash dist/Parallel-reproduced.exe).Hash -ne $first) { throw 'Executable reproducibility check failed' }
+            Remove-Item dist/Parallel-reproduced.exe
+          } catch { Write-Output "::error title=MSI build failed::$($_.Exception.Message)"; throw }
+      - name: Defender, real MSI install, native window, repair and uninstall
+        shell: pwsh
+        working-directory: Исходный код
+        run: ./qa/windows-install.ps1
+      - name: Fail on any Defender finding
+        if: always()
+        shell: pwsh
+        run: |
+          $findings = @(Get-MpThreat -ErrorAction Stop)
+          foreach ($f in $findings) { Write-Output "::error title=Defender detection::$($f.ThreatName)" }
+          if ($findings.Count) { throw 'Defender recorded a detection' }
+      - name: Publish only the verified installer, source and report
+        if: success()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $output = Join-Path $PWD 'releases/5.2'
+          New-Item -ItemType Directory -Force $output | Out-Null
+          Copy-Item 'Исходный код/dist/Parallel-5.2-x64.msi' $output
+          Copy-Item 'Исходный код/dist/Parallel-5.2-Verification.json' $output
+          git archive --format=zip --output="$output/Parallel-5.2-Source.zip" 'HEAD:Исходный код'
+          if ($LASTEXITCODE -ne 0) { throw 'Source archive creation failed' }
+          Get-ChildItem $output -File | Sort-Object Name | ForEach-Object {
+            "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
+          } | Set-Content -LiteralPath "$output/Parallel-5.2-SHA256.txt" -Encoding utf8NoBOM
+          git config user.name 'Parallel build verification'
+          git config user.email 'build-verification@users.noreply.github.com'
+          git add releases/5.2
+          git commit -m 'Publish Windows-tested MSI 5.2, matching source and verification report'
+          if ($LASTEXITCODE -ne 0) { throw 'Verified output commit failed' }
+          git push origin HEAD:refs/heads/codex/parallel-5.2-files
+          if ($LASTEXITCODE -ne 0) { throw 'Verified output publication failed' }

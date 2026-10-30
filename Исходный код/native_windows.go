@@ -24,6 +24,9 @@ import (
 
 func desktopSupported() bool { return true }
 func runDesktop(dir string) error {
+	if err := ensureWebView2(); err != nil {
+		return err
+	}
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return err
 	}

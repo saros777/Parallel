@@ -1,3 +1,4 @@
+param([switch]$ExecutableOnly)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Push-Location $root
@@ -6,19 +7,22 @@ try {
     $env:CGO_ENABLED = '0'
     $env:GOOS = 'windows'
     $env:GOARCH = 'amd64'
-    go build -mod=vendor -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel.exe .
+    # Record provenance separately so checkout paths/state cannot change EXE bytes.
+    go build -mod=vendor -buildvcs=false -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel.exe .
     if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
-    $makensis = Get-Command makensis.exe -ErrorAction SilentlyContinue
-    $makensisPath = if ($makensis) { $makensis.Source } else { $null }
-    if (-not $makensis) {
-        $candidate = Join-Path ${env:ProgramFiles(x86)} 'NSIS\makensis.exe'
-        if (Test-Path $candidate) { $makensisPath = $candidate }
+    $bootstrap = Join-Path $root 'vendor\github.com\wailsapp\wails\v2\internal\webview2runtime\MicrosoftEdgeWebview2Setup.exe'
+    $signature = Get-AuthenticodeSignature -LiteralPath $bootstrap
+    if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+        throw "Microsoft bootstrapper signature is not valid: $($signature.Status)"
     }
-    if (-not $makensisPath) { throw 'Install NSIS 3.x to build the installer. dist/Parallel.exe is already built.' }
-    $exe = Join-Path $root 'dist\Parallel.exe'
-    $setup = Join-Path $root 'vendor\github.com\wailsapp\wails\v2\internal\webview2runtime\MicrosoftEdgeWebview2Setup.exe'
-    $output = Join-Path $root 'dist\Parallel-5.1-Setup.exe'
-    & $makensisPath "/DAPP_EXE=$exe" "/DWV2_SETUP=$setup" "/DOUTPUT=$output" 'build\windows\installer.nsi'
-    if ($LASTEXITCODE -ne 0) { throw 'NSIS build failed' }
-    Write-Host "Installer: $output"
+    Copy-Item -LiteralPath $bootstrap -Destination 'dist\MicrosoftEdgeWebview2Setup.exe'
+    if ($ExecutableOnly) { return }
+    # WiX is developer-only. The installed application needs no .NET or WiX.
+    dotnet tool restore
+    if ($LASTEXITCODE -ne 0) { throw 'WiX tool restore failed' }
+    dotnet tool run wix extension add WixToolset.UI.wixext/5.0.2
+    if ($LASTEXITCODE -ne 0) { throw 'WiX UI extension restore failed' }
+    dotnet tool run wix build -arch x64 -culture ru-ru -ext WixToolset.UI.wixext -d "SourceDir=$root" -d "DistDir=$root\dist" -o dist/Parallel-5.2-x64.msi build/windows/installer.wxs
+    if ($LASTEXITCODE -ne 0) { throw 'MSI build failed' }
+    Write-Host 'MSI: dist/Parallel-5.2-x64.msi'
 } finally { Pop-Location }

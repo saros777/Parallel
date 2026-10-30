@@ -8,7 +8,10 @@ const wait=ms=>new Promise(r=>setTimeout(r,ms));
 (async()=>{const b=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});try{const p=await b.newPage({viewport:{width:1440,height:900}}),errors=[];p.on('pageerror',e=>{errors.push(e.message);console.error('PAGE ERROR',e.message)});
 for(let i=0;i<200;i++){if(fs.existsSync(path.join(temp,'session.json')))break;if(server.exitCode!==null)throw Error('Test server exited: '+server.exitCode);await wait(50)}
 session=JSON.parse(fs.readFileSync(path.join(temp,'session.json')));
+// Slow last schedule script: an immediate local API reply must not render the old UI.
+await p.route('**/studio.js?*',async route=>{await wait(500);await route.continue()});
 await p.goto(session.url,{waitUntil:'networkidle'});await p.locator('.studio-matrix').waitFor();
+await p.unroute('**/studio.js?*');
 await p.evaluate(seed=>{db=seed;settings={labels:{}};selectedClasses=null;studioPeriod='base';studioAxis='classes';render()},JSON.parse(fs.readFileSync(path.join(root,'seed.json'))));
 for(const [w,h] of [[1440,900],[1280,720]]){await p.setViewportSize({width:w,height:h});await p.waitForTimeout(250);const m=await p.evaluate(()=>{const g=document.querySelector('.studio-grid'),t=document.querySelector('.studio-matrix'),last=t.querySelector('tbody tr:last-child').getBoundingClientRect();return {rows:t.tBodies[0].rows.length,grid:[g.clientWidth,g.scrollWidth,g.clientHeight,g.scrollHeight],lastBottom:last.bottom,gridBottom:g.getBoundingClientRect().bottom,body:[document.documentElement.scrollWidth,document.documentElement.scrollHeight]}});console.log('FIT',w,h,m);assert.equal(m.rows,25);assert(m.lastBottom<=m.gridBottom+1);assert(m.grid[3]<=m.grid[2]+1);assert(m.body[1]<=h);await p.screenshot({path:path.join(temp,'fit-'+w+'.png')});if(process.env.PARALLEL_QA_SCREENSHOTS){fs.mkdirSync(process.env.PARALLEL_QA_SCREENSHOTS,{recursive:true});await p.screenshot({path:path.join(process.env.PARALLEL_QA_SCREENSHOTS,'schedule-'+w+'.png')})}}
 await p.setViewportSize({width:1440,height:900});
