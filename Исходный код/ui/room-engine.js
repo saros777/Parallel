@@ -38,7 +38,7 @@
  function resolve(db,raw){
   const policy=db.preferences?.roomPolicy;
   if(!policy?.enabled)return raw;
-  const key=JSON.stringify([db.overrides,db.extraLessons,policy]);
+  const key=JSON.stringify([db.overrides,db.extraLessons,db.absences,db.preferences?.studioSuspensions,db.baseSchedule,(db.courses||[]).filter(c=>c.studioEdited),policy]);
   const cached=cache.get(db);
   if(cached?.key===key&&cached.lessons===db.lessons&&cached.rooms===db.rooms)return cached.rows.map(l=>({...l}));
   const roomIds=new Set(db.rooms.map(r=>r.id)),pool=(policy.pool||[]).filter(r=>roomIds.has(r)),home=policy.teacherRooms||{};
@@ -50,7 +50,7 @@
   for(const l of rows){if(!byDay.has(l.date))byDay.set(l.date,[]);byDay.get(l.date).push(l)}
   for(const lessons of byDay.values()){
    const occupied=new Map();
-   const reserve=l=>{if(!l.cancelled&&!l.parked&&l.roomId){if(!occupied.has(l.roomId))occupied.set(l.roomId,[]);occupied.get(l.roomId).push(l)}};
+   const reserve=l=>{if(!l.cancelled&&!l.parked&&!l.suspended&&l.roomId){if(!occupied.has(l.roomId))occupied.set(l.roomId,[]);occupied.get(l.roomId).push(l)}};
    const free=(r,l)=>!(occupied.get(r)||[]).some(x=>root.ScheduleEngine.overlap(x,l));
    for(const l of lessons.filter(x=>x.roomMode==='manual'))reserve(l);
    const automatic=lessons.filter(x=>x.roomMode==='auto').sort((a,b)=>Number(rule(b).mode==='fixed')-Number(rule(a).mode==='fixed')||Number(!preferred(a).length)-Number(!preferred(b).length)||root.ScheduleEngine.minutes(a)[0]-root.ScheduleEngine.minutes(b)[0]||String(a.id).localeCompare(String(b.id),'en',{numeric:true}));
@@ -59,7 +59,7 @@
    for(const l of automatic){
     const first=preferred(l)[0];
     l.roomId=null;l.roomReason='Нет свободного кабинета';
-    if(l.cancelled||l.parked){l.roomId=first||null;l.roomReason='Урок вне сетки не занимает кабинет';continue}
+    if(l.cancelled||l.parked||l.suspended){l.roomId=first||null;l.roomReason='Урок вне сетки не занимает кабинет';continue}
     if(rule(l).mode==='fixed'){
      l.roomId=roomIds.has(rule(l).rooms?.[0])?rule(l).rooms[0]:null;
      l.roomReason=l.roomId?(free(l.roomId,l)?'Жёсткое закрепление за учителем':'Жёсткое закрепление: кабинет занят, требуется решение'):'Жёсткое закрепление: кабинет не задан';

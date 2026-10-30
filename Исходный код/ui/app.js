@@ -22,7 +22,7 @@ function makeDemo(){
 function normalize(data){
  E.validate(data);
  // Student PII has no scheduling purpose in this workspace.
- const permitted=['meta','classes','subjects','teachers','rooms','lessons','courses','groups','periods','calendar','calls','teacherSubjects','overrides','extraLessons','absences','history','preferences'];
+ const permitted=['meta','classes','subjects','teachers','rooms','lessons','courses','groups','periods','calendar','calls','teacherSubjects','overrides','extraLessons','absences','history','preferences','baseSchedule'];
  const out=Object.fromEntries(permitted.filter(k=>k in data).map(k=>[k,data[k]]));
  for(const k of ['courses','groups','periods','calendar','calls','teacherSubjects','extraLessons','absences','history'])out[k]??=[];
  out.overrides??={};

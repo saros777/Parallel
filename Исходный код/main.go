@@ -29,7 +29,7 @@ import (
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "4.0.0"
+const version = "5.0.0"
 const appID = "parallel-school-desktop"
 
 type Envelope struct {

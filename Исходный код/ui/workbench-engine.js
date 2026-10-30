@@ -1,8 +1,8 @@
 /* Pure manual scheduling operations. No automatic deletion, class reassignment or silent override. */
 (function(root){
  const E=root.ScheduleEngine||require('./engine.js');
- const active=l=>!l.cancelled&&!l.parked;
- function slice(db,dates){const ds=new Set(dates);return {...db,lessons:db.lessons.filter(l=>ds.has(l.date)),extraLessons:(db.extraLessons||[]).filter(l=>ds.has(l.date))}}
+ const active=l=>!l.cancelled&&!l.parked&&!l.suspended;
+ function slice(db,dates){const ds=new Set(dates);if(db.baseSchedule)return {...db,baseSchedule:null,lessons:E.effective(db).filter(l=>ds.has(l.date)),extraLessons:[],overrides:{}};return {...db,lessons:db.lessons.filter(l=>ds.has(l.date)),extraLessons:(db.extraLessons||[]).filter(l=>ds.has(l.date))}}
  function plan(db,id,date,slot,{targetId=null,action='swap',block=false,timingDB=db}={}){
   const rows=E.effective(db),old=rows.find(l=>l.id===id);
   if(!old||old.cancelled)throw Error('Урок удалён или не найден');

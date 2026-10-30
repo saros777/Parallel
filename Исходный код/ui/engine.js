@@ -2,7 +2,7 @@
 (function(root){
 const id=x=>String(x??'');
 const addDays=(d,n)=>{const t=new Date(d+'T12:00:00Z');t.setUTCDate(t.getUTCDate()+n);return t.toISOString().slice(0,10)};
-function effective(db){const rows=[...db.lessons,...(db.extraLessons||[])].map(x=>({...x,...(db.overrides||{})[x.id]}));return root.RoomAllocator?root.RoomAllocator.resolve(db,rows):rows}
+function effective(db){const rows=(root.StudioModel?root.StudioModel.expand(db):[...db.lessons,...(db.extraLessons||[])]).map(x=>({...x,...(db.overrides||{})[x.id]})).map(l=>root.StudioModel?{...l,suspended:root.StudioModel.suspended(l,db)}:l);return root.RoomAllocator?root.RoomAllocator.resolve(db,rows):rows}
 function patchedDB(db,patches){
  const work={...db,overrides:{...db.overrides},extraLessons:[...(db.extraLessons||[])]};
  const ids=new Set([...db.lessons,...work.extraLessons].map(x=>x.id));
@@ -23,7 +23,7 @@ function minutes(l){
  const m=(l.time||'').match(/(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/);
  return m?[+m[1]*60 + +m[2],+m[3]*60 + +m[4]]:[l.slot*60,l.slot*60+45];
 }
-function overlap(a,b){const x=minutes(a),y=minutes(b);return !a.parked&&!b.parked&&a.date===b.date&&x[0]<y[1]&&y[0]<x[1]}
+function overlap(a,b){const x=minutes(a),y=minutes(b);return !a.parked&&!b.parked&&!a.suspended&&!b.suspended&&a.date===b.date&&x[0]<y[1]&&y[0]<x[1]}
 const profileKeys=['social','chemical','physical'];
 const profileNames={social:'Социально-гуманитарный',chemical:'Химико-биологический',physical:'Физико-математический'};
 const profileShort={social:'СГ',chemical:'ХБ',physical:'ФМ'};
@@ -65,6 +65,7 @@ function profileLines(rows,db,classId){
  });
 }
 function disjoint(a,b,db){
+ if(a.groupId&&b.groupId&&a.groupId!==b.groupId){const ga=(db.groups||[]).find(g=>g.id===a.groupId),gb=(db.groups||[]).find(g=>g.id===b.groupId);if(ga&&gb&&ga.classId===gb.classId&&ga.subjectId===gb.subjectId)return true;}
  const aa=audience(a,db),bb=audience(b,db);
  if(aa&&bb)return !aa.some(x=>bb.includes(x));
  function ordinal(n){if(/первая|первой/i.test(n))return '1';if(/вторая|второй/i.test(n))return '2';return n.match(/(?:^|\D)([12])(?:\D|$)/)?.[1]}
@@ -82,10 +83,11 @@ function pairIssues(a,b,db){
 }
 function conflicts(db,rows=effective(db)){
  const out=[],days={};
- for(const x of rows.filter(x=>!x.cancelled&&!x.parked)){
+ for(const x of rows.filter(x=>!x.cancelled&&!x.parked&&!x.suspended)){
   (days[x.date]??=[]).push(x);
   if(!x.teacherId)out.push({lessonIds:[x.id],date:x.date,kind:'Не назначен учитель'});
   if(db.preferences?.roomPolicy?.enabled&&x.roomMode==='auto'&&!x.roomId)out.push({lessonIds:[x.id],date:x.date,kind:'Нет свободного кабинета'});
+  for(const kind of root.StudioModel?.restrictions(x,db)||[])out.push({lessonIds:[x.id],date:x.date,kind});
   if(absenceFor(x,db))out.push({lessonIds:[x.id],date:x.date,kind:'Назначен отсутствующий учитель'});
  }
  for(const ls of Object.values(days))for(let i=0;i<ls.length;i++)for(let j=i+1;j<ls.length;j++){
@@ -94,7 +96,7 @@ function conflicts(db,rows=effective(db)){
  return out;
 }
 function changeIssues(candidate,db,rows=effective(db),ignore=[]){
- const issues=[];
+ const issues=root.StudioModel?root.StudioModel.restrictions(candidate,db):[];
  if(!candidate.cancelled&&!candidate.parked){
   if(!candidate.time)issues.push('Для этого слота неизвестно время звонка');
   if(absenceFor(candidate,db))issues.push('Учитель отмечен отсутствующим');
@@ -120,7 +122,7 @@ function candidates(lesson,db){
  const target=subjectIdentity(names.get(id(lesson.subjectId))),family=subjectFamily(target);
  const qualifications=new Map();
  // Use original teaching assignments, not temporary substitutions, as evidence.
- for(const x of [...(db.teacherSubjects||[]),...db.lessons]){
+ for(const x of [...(db.teacherSubjects||[]),...(db.courses||[]),...db.lessons]){
   if(!x.teacherId||!x.subjectId)continue;
   const key=id(x.teacherId);if(!qualifications.has(key))qualifications.set(key,new Set());
   qualifications.get(key).add(id(x.subjectId));
@@ -131,7 +133,7 @@ function candidates(lesson,db){
   const relatedSubjects=taught.filter(s=>family&&subjectFamily(names.get(s))===family);
   if(!exact.length&&!relatedSubjects.length)return null;
   const l={...lesson,teacherId:t.id};
-  const busy=absenceFor(l,db)||rows.some(x=>x.id!==l.id&&!x.cancelled&&x.teacherId===t.id&&overlap(x,l));
+  const busy=(root.StudioModel&&root.StudioModel.restrictions(l,db).length)||absenceFor(l,db)||rows.some(x=>x.id!==l.id&&!x.cancelled&&x.teacherId===t.id&&overlap(x,l));
   const subject=!!exact.length,related=!subject&&!!relatedSubjects.length;
   const known=db.lessons.some(x=>x.teacherId===t.id&&x.classId===l.classId);
   const matchingSubjects=[...new Set((subject?exact:relatedSubjects).map(s=>names.get(s)).filter(Boolean))];
