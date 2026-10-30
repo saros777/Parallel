@@ -1,0 +1,112 @@
+name: Windows security gate
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/parallel-5.1-desktop]
+    paths:
+      - '.github/workflows/windows-security.yml'
+      - 'Исходный код/**'
+permissions:
+  contents: read
+jobs:
+  defender-and-native-window:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - name: Require active Defender and current signatures
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # Keep the sample private: do not automatically submit repository binaries.
+          Set-MpPreference -SubmitSamplesConsent 2
+          Update-MpSignature
+          $status = Get-MpComputerStatus
+          $status | Select-Object AMServiceEnabled,AntivirusEnabled,AntivirusSignatureVersion,AntivirusSignatureLastUpdated | Format-List
+          if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) { throw 'Defender is unavailable; no clean verdict can be claimed' }
+      - name: Scan exact withdrawn installer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $target = Join-Path $env:RUNNER_TEMP 'Parallel-5.1-withdrawn.exe'
+          $start = [Diagnostics.ProcessStartInfo]::new('git')
+          $start.ArgumentList.Add('show')
+          $start.ArgumentList.Add('39226d0:releases/Parallel-5.1-Setup.exe')
+          $start.RedirectStandardOutput = $true
+          $start.UseShellExecute = $false
+          $process = [Diagnostics.Process]::Start($start)
+          $stream = [IO.File]::Create($target)
+          try { $process.StandardOutput.BaseStream.CopyTo($stream) } finally { $stream.Dispose() }
+          $process.WaitForExit()
+          if ($process.ExitCode -ne 0) { throw 'Failed to recover the original installer' }
+          try {
+            $hash = (Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($hash -ne '6b9599b9dbee09f6c0b5f155c69b249d8b23b930e54906a77b3680b65f4222b5') { throw 'Installer hash mismatch' }
+            $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+            & $scanner -Scan -ScanType 3 -File $target
+            if ($LASTEXITCODE -ne 0) { throw "Defender rejected installer: exit $LASTEXITCODE" }
+            if (-not (Test-Path $target)) { throw 'Installer was quarantined' }
+          } finally {
+            Get-MpThreatDetection | Select-Object ThreatID,InitialDetectionTime,Resources,ActionSuccess | Format-List
+          }
+      - name: Build native executable from pinned sources
+        shell: pwsh
+        working-directory: Исходный код
+        run: |
+          $ErrorActionPreference = 'Stop'
+          go test -mod=vendor ./...
+          if ($LASTEXITCODE -ne 0) { throw 'Go tests failed' }
+          $env:CGO_ENABLED = '0'
+          $env:GOOS = 'windows'
+          $env:GOARCH = 'amd64'
+          New-Item -ItemType Directory -Force dist | Out-Null
+          go build -mod=vendor -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel.exe .
+          if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+          $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+          & $scanner -Scan -ScanType 3 -File (Join-Path $PWD 'dist\Parallel.exe')
+          if ($LASTEXITCODE -ne 0) { throw 'Defender rejected native executable' }
+          $bootstrap = Join-Path $PWD 'vendor\github.com\wailsapp\wails\v2\internal\webview2runtime\MicrosoftEdgeWebview2Setup.exe'
+          $sig = Get-AuthenticodeSignature $bootstrap
+          $sig | Select-Object Status,StatusMessage,SignerCertificate | Format-List
+          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Microsoft bootstrapper signature not verified' }
+      - name: Verify native window, frontend startup and safe close
+        shell: pwsh
+        working-directory: Исходный код
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'parallel-native-test'
+          $start = [Diagnostics.ProcessStartInfo]::new((Join-Path $PWD 'dist\Parallel.exe'))
+          $start.ArgumentList.Add('--data-dir')
+          $start.ArgumentList.Add($dir)
+          $start.UseShellExecute = $false
+          $app = [Diagnostics.Process]::Start($start)
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 120; $i++) {
+              Start-Sleep -Milliseconds 250
+              $app.Refresh()
+              if ($app.HasExited) { throw 'Native application exited during startup' }
+              $statePath = Join-Path $dir 'workspace.json'
+              if ($app.MainWindowHandle -ne 0 -and (Test-Path $statePath)) {
+                try {
+                  $state = Get-Content -Raw $statePath | ConvertFrom-Json
+                  if ($state.revision -ge 1 -and $state.state.preferences.studioSuspensions) { $ready = $true; break }
+                } catch { }
+              }
+            }
+            if (-not $ready) { throw 'Native window / frontend IPC did not become ready; inspect Windows runtime' }
+            if (Test-Path (Join-Path $dir 'session.json')) { throw 'Native mode unexpectedly started an HTTP server' }
+            if (-not $app.CloseMainWindow()) { throw 'Cannot request native window close' }
+            if (-not $app.WaitForExit(15000)) { throw 'Native save-and-close did not finish' }
+            Write-Output 'Native Windows window, IPC, autosave and close verified'
+          } finally {
+            if (-not $app.HasExited) { $app.Kill() }
+            $log = Join-Path $dir 'application.log'
+            if (Test-Path $log) { Get-Content $log }
+          }
