@@ -29,3 +29,14 @@ console.log('Studio model: absence trays, explicit return, subsequent absences a
 
 db=fixture();source=S.template(db)[0];S.commitBase(db,[{id:source.id,before:source,after:{...source,slot:3}}]);const sliced=W.slice(db,['2026-09-14']);assert.equal(E.effective(sliced).length,1);assert.equal(E.effective(sliced)[0].slot,3);
 console.log('Studio model: slicing a later week preserves base projection without duplicate lessons');
+
+// Occupancy follows the visible grid, never a stale or missing bell label.
+db=fixture();const gridLesson=db.lessons[0];
+assert(!E.overlap(gridLesson,{...gridLesson,id:'free',slot:5,time:gridLesson.time}),'different columns cannot collide because of copied bell text');
+assert(E.overlap(gridLesson,{...gridLesson,id:'busy',time:''}),'same column remains occupied without bell text');
+assert(E.overlap(gridLesson,{...gridLesson,id:'busy2',time:'23:00 - 23:45'}),'same column cannot look free because the clock text differs');
+const emptyMove={id:gridLesson.id,before:gridLesson,after:{...gridLesson,slot:4,time:''}};
+assert.deepEqual(W.assess(db,[emptyMove]).issues,[],'empty column is valid when bell time is unknown');
+assert(S.targetAllowed(gridLesson,'classes','c'));assert(!S.targetAllowed(gridLesson,'classes','other'));
+assert(S.targetAllowed(gridLesson,'teachers','t'));assert(!S.targetAllowed(gridLesson,'teachers','other-teacher'));
+console.log('Regression: grid occupancy, stale/missing bell labels and strict row ownership passed');

@@ -29,7 +29,7 @@ import (
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "5.0.0"
+const version = "5.1.0"
 const appID = "parallel-school-desktop"
 
 type Envelope struct {
@@ -62,7 +62,13 @@ func main() {
 	if *dir == "" {
 		*dir = defaultDataDir()
 	}
-	if err := run(*dir, *port, *noBrowser); err != nil {
+	var err error
+	if desktopSupported() && !*noBrowser {
+		err = runDesktop(*dir)
+	} else {
+		err = run(*dir, *port, *noBrowser)
+	}
+	if err != nil {
 		showError("Параллель", "Не удалось запустить приложение.\n\n"+err.Error()+"\n\nРабочая база: "+*dir)
 		os.Exit(1)
 	}

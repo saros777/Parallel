@@ -53,7 +53,7 @@
    const reserve=l=>{if(!l.cancelled&&!l.parked&&!l.suspended&&l.roomId){if(!occupied.has(l.roomId))occupied.set(l.roomId,[]);occupied.get(l.roomId).push(l)}};
    const free=(r,l)=>!(occupied.get(r)||[]).some(x=>root.ScheduleEngine.overlap(x,l));
    for(const l of lessons.filter(x=>x.roomMode==='manual'))reserve(l);
-   const automatic=lessons.filter(x=>x.roomMode==='auto').sort((a,b)=>Number(rule(b).mode==='fixed')-Number(rule(a).mode==='fixed')||Number(!preferred(a).length)-Number(!preferred(b).length)||root.ScheduleEngine.minutes(a)[0]-root.ScheduleEngine.minutes(b)[0]||String(a.id).localeCompare(String(b.id),'en',{numeric:true}));
+   const automatic=lessons.filter(x=>x.roomMode==='auto').sort((a,b)=>Number(rule(b).mode==='fixed')-Number(rule(a).mode==='fixed')||Number(!preferred(a).length)-Number(!preferred(b).length)||a.slot-b.slot||String(a.id).localeCompare(String(b.id),'en',{numeric:true}));
    // Reserve home rooms before assigning fallback rooms, including overlapping bell schedules.
    const fallback=[];
    for(const l of automatic){

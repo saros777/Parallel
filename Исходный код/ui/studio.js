@@ -42,8 +42,9 @@ function studioBrief(l){return [lookup('classes',l.classId)?.name,lookup('subjec
 card=function(l){
  const v=studioView(),parts=[];
  if(v.subject&&['general','classes'].includes(studioAxis))parts.push(studioSubject(l));
- if(studioAxis==='teachers'||(studioAxis==='general'&&v.teacher))parts.push(studioTeacher(l.teacherId));
- if(studioAxis==='rooms'||(studioAxis==='general'&&v.room))parts.push(l.roomId?PrintTools.roomNumber(roomName(l.roomId)):'—');
+ if(['teachers','rooms'].includes(studioAxis))parts.push(lookup('classes',l.classId)?.name||'—');
+ if(studioAxis==='general'&&v.teacher)parts.push(studioTeacher(l.teacherId));
+ if(studioAxis==='general'&&v.room)parts.push(l.roomId?PrintTools.roomNumber(roomName(l.roomId)):'—');
  if(v.group&&studioGroup(l))parts.push(studioGroup(l));
  const color=lookup('teachers',l.teacherId)?.color||W.teacherColor(l.teacherId,db);
  return `<button type="button" class="lesson studio-card ${l.placementForced?'forced':''} ${studioPick?.id===l.id?'picked':''}" data-lesson="${h(l.id)}" style="--subject-color:${h(color)}" title="${h(studioBrief(l))}" aria-label="${h(studioBrief(l))}">${h(parts.join(' · ')||'·')}</button>`;
@@ -66,22 +67,31 @@ function studioCheck(raw){
  const restrictions=raw.flatMap(p=>[...SM.restrictions(p.after,db),...(E.absenceFor(p.after,studioWork)?['Учитель отмечен отсутствующим']:[])].map(kind=>({kind,lessonIds:[p.id]})));
  return {patches:result.patches,issues:[...result.issues,...restrictions]};
 }
+function studioClosePopup(){document.querySelector('#studio-popover')?.remove()}
+function studioPopup(title,body,actions){
+ studioClosePopup();$('#dialog').close();
+ const panel=document.createElement('section');panel.id='studio-popover';panel.setAttribute('role','dialog');panel.setAttribute('aria-label',title);
+ panel.innerHTML=`<header><strong>${h(title)}</strong><button aria-label="Закрыть сообщение">×</button></header><div class="popover-body">${body}</div><div class="popover-actions">${actions.map((a,i)=>`<button data-pop-action="${i}" class="${a.class||''}">${h(a.text)}</button>`).join('')}</div>`;
+ document.body.append(panel);panel.querySelector('header button').onclick=studioClosePopup;
+ actions.forEach((a,i)=>panel.querySelector(`[data-pop-action="${i}"]`).onclick=a.action);
+ const r=panel.getBoundingClientRect();panel.style.left=Math.max(6,Math.min(studioPointer.x+12,innerWidth-r.width-6))+'px';panel.style.top=Math.max(6,Math.min(studioPointer.y+12,innerHeight-r.height-6))+'px';
+ panel.querySelector('[data-pop-action]')?.focus({preventScroll:true});
+}
 function studioConfirm(label,raw){
  const r=studioCheck(raw);const notes=[...new Set(r.issues.map(x=>x.kind))];
  if(!notes.length){studioApply(label,r.patches);return}
- const mouse=studioPointer;
- dialog('Разместить с конфликтом?',`<div class="error"><strong>${notes.map(h).join('<br>')}</strong></div><p>Карточки сохранятся вместе. Пересечение останется отмеченным в расписании и контроле.</p><p>${studioPeriod==='base'?'Изменение основы повторяется во всех неделях.':'Изменение относится только к выбранной неделе.'}</p>`,[{text:'Не размещать',action:()=>$('#dialog').close()},{text:'Игнорировать конфликт и разместить',class:'primary',action:()=>studioApply(label,r.patches,true)}]);
- const rect=$('#dialog').getBoundingClientRect();if(mouse&&rect.width<innerWidth-24){$('#dialog').style.margin='0';$('#dialog').style.left=Math.max(12,Math.min(mouse.x+12,innerWidth-rect.width-12))+'px';$('#dialog').style.top=Math.max(12,Math.min(mouse.y+12,innerHeight-rect.height-12))+'px'}
+ const moving=new Set(raw.map(p=>p.id));
+ const otherIds=new Set(r.issues.flatMap(i=>i.lessonIds||[]).filter(id=>!moving.has(id)));
+ const occupied=[...otherIds].map(id=>studioRows.find(l=>l.id===id)).filter(Boolean);
+ studioPopup('Конфликт',`<ul>${notes.map(n=>`<li>${h(n)}</li>`).join('')}</ul>${occupied.length?`<small>${occupied.slice(0,3).map(l=>h(lookup('classes',l.classId)?.name+' · '+studioSubject(l)+' · '+days[SM.day(l.date)]+' '+l.slot)).join('<br>')}</small>`:''}`,[{text:'Не размещать',action:studioClosePopup},{text:'Игнорировать конфликт и разместить',class:'primary',action:()=>studioApply(label,r.patches,true)}]);
 }
 function studioTime(classId,d,slot){const l=studioRows.find(l=>l.classId===classId&&l.date===d&&l.slot===slot&&l.time)||db.lessons.find(l=>l.classId===classId&&l.slot===slot&&l.time);return {time:l?.time||'',callId:l?.callId||null}}
 function studioPlan(td,action='together'){
  const old=studioRows.find(l=>l.id===studioPick?.id);if(!old)throw Error('Выберите урок');
- if(['classes','general'].includes(studioAxis)&&old.classId!==td.dataset.entity)throw Error('Выберите строку класса этого урока');
+ if(!SM.targetAllowed(old,studioAxis,td.dataset.entity))throw Error(studioAxis==='teachers'?'Выберите строку учителя этого урока':studioAxis==='rooms'?'Выберите строку кабинета этого урока':'Карточку можно разместить только в строке её класса');
  const target=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).find(l=>l.id!==old.id&&(!old.blockId||l.blockId!==old.blockId))?.id;
  const local=W.slice(studioWork,[old.date,td.dataset.date]);
  const patches=W.plan(local,old.id,td.dataset.date,+td.dataset.slot,{targetId:target===old.id?null:target,action,timingDB:studioWork});
- if(studioAxis==='teachers')patches[0].after.teacherId=td.dataset.entity;
- if(studioAxis==='rooms'){patches[0].after.roomId=td.dataset.entity;patches[0].after.roomMode='manual'}
  Object.assign(patches[0].after,studioTime(old.classId,td.dataset.date,+td.dataset.slot));
  patches[0].after.parkingArea=null;patches[0].after.suspended=false;const absent=E.absenceFor({...patches[0].after,parked:false},studioWork);patches[0].after.absenceReturnFor=absent?.id||null;
  if(old.blockId){for(const partner of studioRows.filter(l=>l.id!==old.id&&l.blockId===old.blockId&&l.date===old.date)){if(partner.locked)throw Error('Сначала снимите закрепление всех уроков спарки');const slot=+td.dataset.slot+(partner.blockOffset||0)-(old.blockOffset||0);if(slot<1||slot>studioSlots)throw Error('Блок уроков не помещается в этот день');patches.push({id:partner.id,before:partner,after:{...partner,...patches[0].after,id:partner.id,slot,blockOffset:partner.blockOffset,...studioTime(partner.classId,td.dataset.date,slot)}})}}
@@ -91,10 +101,11 @@ function studioPlace(td){
  if(!studioPick)return;
  try{
   const old=studioRows.find(l=>l.id===studioPick.id);
+  if(!SM.targetAllowed(old,studioAxis,td.dataset.entity)){studioHover(td);return}
   if(!old.parked&&!old.suspended&&old.date===td.dataset.date&&old.slot===+td.dataset.slot&&(['classes','general'].includes(studioAxis)||old[studioAxis==='teachers'?'teacherId':'roomId']===td.dataset.entity)){studioCancel();return}
   const occupants=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).filter(l=>l&&l.id!==old.id&&(!old.blockId||l.blockId!==old.blockId));
   if(occupants.some(l=>l.classId===old.classId)){
-   dialog('Ячейка занята',`<p>${h(studioBrief(old))}</p><p>Выберите действие. При совместном размещении ни один урок не удаляется.</p>`,[{text:'Назад',action:()=>$('#dialog').close()},{text:'Поменять местами',action:()=>studioConfirm('Обмен уроками',studioPlan(td,'swap'))},{text:'Вытеснить в резерв',action:()=>studioConfirm('Перенос с резервом',studioPlan(td,'stash'))},{text:'Поместить вместе',class:'primary',action:()=>studioConfirm('Совместное размещение',studioPlan(td))}]);
+   studioPopup('Ячейка занята',`<p>${h(studioBrief(old))}</p><p>Выберите действие. При совместном размещении ни один урок не удаляется.</p>`,[{text:'Назад',action:studioClosePopup},{text:'Поменять местами',action:()=>studioConfirm('Обмен уроками',studioPlan(td,'swap'))},{text:'Вытеснить в резерв',action:()=>studioConfirm('Перенос с резервом',studioPlan(td,'stash'))},{text:'Поместить вместе',class:'primary',action:()=>studioConfirm('Совместное размещение',studioPlan(td))}]);
   }else studioConfirm('Перенос урока',studioPlan(td));
  }catch(e){message(e.message)}
 }
@@ -102,7 +113,7 @@ function studioPark(area){
  if(!studioPick)return;try{const picked=studioRows.find(l=>l.id===studioPick.id);const members=picked.blockId?studioRows.filter(l=>l.blockId===picked.blockId&&l.date===picked.date):[picked];const p=members.flatMap(l=>W.park(studioWork,l.id)).map(p=>({...p,after:{...p.after,parkingArea:area}}));studioApply(area==='side'?'Убрать в боковую область':'Убрать в неразмещённые',p)}catch(e){message(e.message)}
 }
 let studioPointer={x:0,y:0};
-function studioCancel(){studioPick=null;studioGhost?.remove();studioGhost=null;$$('.picked,.target-ok,.target-bad,.target-block').forEach(e=>e.classList.remove('picked','target-ok','target-bad','target-block'));$('#studio-hint')?.replaceChildren(document.createTextNode('Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить'))}
+function studioCancel(){studioClosePopup();studioPick=null;studioGhost?.remove();studioGhost=null;$$('.picked,.target-ok,.target-bad,.target-block,.target-pending').forEach(e=>e.classList.remove('picked','target-ok','target-bad','target-block','target-pending'));$('#studio-hint')?.replaceChildren(document.createTextNode('Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить'))}
 function studioTake(id){
  const l=studioRows.find(l=>l.id===id);if(!l)return;
  if(l.locked||l.cancelled){message('Сначала снимите закрепление или восстановите урок.');return}
@@ -111,19 +122,31 @@ function studioTake(id){
  studioGhost.style.left=Math.min(innerWidth-180,studioPointer.x+12)+'px';studioGhost.style.top=Math.min(innerHeight-70,studioPointer.y+12)+'px';
  $$('[data-lesson]').filter(e=>e.dataset.lesson===id).forEach(e=>e.classList.add('picked'));
  const key=studioAxis==='teachers'?'teacherId':studioAxis==='rooms'?'roomId':'classId';
- $$('[data-row-head]').forEach(e=>e.classList.toggle('target-ok',e.dataset.rowHead===l[key]));
- $$('[data-col-head]').forEach(head=>{const [d,n]=head.dataset.colHead.split('|');const candidate={...l,date:d,slot:+n,parked:false,...studioTime(l.classId,d,+n)};const notes=E.changeIssues(candidate,studioWork,studioRows);head.classList.add(notes.length?'target-bad':'target-ok')});
+ $$('[data-row-head]').forEach(e=>{e.classList.toggle('target-ok',e.dataset.rowHead===l[key]);e.classList.toggle('target-block',e.dataset.rowHead!==l[key])});
+ const pickup=studioPick,heads=$$('[data-col-head]');let nextHead=0;
+ heads.forEach(head=>head.classList.add('target-pending'));
+ // Yield between columns so picking up a card never waits for the whole week.
+ const paintNext=()=>{
+  if(studioPick!==pickup||nextHead>=heads.length)return;
+  const head=heads[nextHead++],[d,n]=head.dataset.colHead.split('|');
+  const td=$(`[data-entity="${l[key]}"][data-date="${d}"][data-slot="${n}"]`);
+  if(td){const result=studioAvailability(td);head.classList.remove('target-pending');head.classList.add(result.blocked?'target-block':result.notes.length?'target-bad':'target-ok')}
+  if(nextHead<heads.length)requestAnimationFrame(paintNext);
+ };
+ requestAnimationFrame(paintNext);
  $('#studio-hint').textContent=studioBrief(l)+' · выберите место; правая/нижняя область — временно убрать';
+}
+function studioAvailability(td){
+ const key=td.dataset.entity+'|'+td.dataset.date+'|'+td.dataset.slot;
+ if(!studioPick.cache.has(key)){try{const r=studioCheck(studioPlan(td));studioPick.cache.set(key,{notes:[...new Set(r.issues.map(x=>x.kind))]})}catch(e){studioPick.cache.set(key,{blocked:true,notes:[e.message]})}}
+ return studioPick.cache.get(key);
 }
 function studioHover(td){
  if(!studioPick)return;
- const key=td.dataset.entity+'|'+td.dataset.date+'|'+td.dataset.slot;
- if(!studioPick.cache.has(key)){try{const r=studioCheck(studioPlan(td));studioPick.cache.set(key,{notes:[...new Set(r.issues.map(x=>x.kind))]})}catch(e){studioPick.cache.set(key,{blocked:true,notes:[e.message]})}}
- const r=studioPick.cache.get(key),state=r.blocked?'target-block':r.notes.length?'target-bad':'target-ok';
- $$('[data-col-head]').forEach(e=>e.classList.remove('target-ok','target-bad','target-block'));
- const head=$(`[data-col-head="${td.dataset.date}|${td.dataset.slot}"]`);head?.classList.add(state);
- const row=td.parentElement.firstElementChild;row.classList.remove('target-ok','target-bad','target-block');row.classList.add(state);
- studioGhost?.classList.toggle('conflict',!!r.notes.length);
+ const r=studioAvailability(td),state=r.blocked?'target-block':r.notes.length?'target-bad':'target-ok';
+ const head=$(`[data-col-head="${td.dataset.date}|${td.dataset.slot}"]`);if(!r.blocked){head?.classList.remove('target-ok','target-bad','target-pending');head?.classList.add(state)}
+ const row=td.parentElement.firstElementChild;if(!r.blocked){row.classList.remove('target-ok','target-bad');row.classList.add(state)}
+ studioGhost?.classList.toggle('conflict',!!r.notes.length&&!r.blocked);
  if(studioGhost)studioGhost.querySelector('small').textContent=r.notes.join('; ')||'Клик — разместить';
 }
 function studioTray(area,rows){
@@ -186,7 +209,12 @@ function studioFit(){
  const colWidth=Math.max(1,(grid.clientWidth-(studioAxis==='teachers'?110:44))/(studioSlots*5));
  workspace.style.setProperty('--card-width',colWidth+'px');workspace.style.setProperty('--card-height',Math.max(7,Math.min(24,rowHeight))+'px');
  workspace.style.setProperty('--card-font',Math.max(6,Math.min(12,colWidth/3.2,rowHeight*.65))+'px');
- $$('.studio-stack').forEach(s=>{const n=s.children.length||1;s.style.setProperty('--parts',n);s.style.fontSize=Math.max(6,Math.min(12,colWidth/3.2,rowHeight/n*.9))+'px'});
+ $$('#studio-workspace .studio-card').forEach(c=>{
+  const stack=c.closest('.studio-stack'),height=stack?rowHeight/(stack.children.length||1):Math.min(24,rowHeight);
+  const width=colWidth,len=[...c.textContent].length||1;
+  const size=Math.max(6,Math.min(16,height*.9,(width-2)/(len*.56)));
+  if(c.style.getPropertyValue('--studio-font')!==size+'px')c.style.setProperty('--studio-font',size+'px');
+ });
 
 }
 function studioBindSplit(){
@@ -199,7 +227,7 @@ function studioBindSplit(){
  }
 }
 showSettings=function(){
- const v=studioView();dialog('Вид карточки',`<p>В режиме «Общее» выберите содержимое. «Классы» показывают предмет, «Учителя» — учителя, «Кабинеты» — номер. Сокращения и подгруппы действуют во всех режимах.</p><div class="form-grid">${[['subject','Предмет'],['teacher','Учитель: фамилия и инициалы'],['room','Номер кабинета'],['group','Подгруппа / профиль'],['abbreviate','Сокращения предметов']].map(([k,n])=>`<label class="checkbox-line"><input type="checkbox" data-studio-field="${k}" ${v[k]?'checked':''}>${n}</label>`).join('')}</div>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Применить',class:'primary',action:()=>{settings.studioDisplay=Object.fromEntries($$('[data-studio-field]').map(e=>[e.dataset.studioField,e.checked]));$('#dialog').close();dirty=true;render()}}]);
+ const v=studioView();dialog('Вид карточки',`<p>В режиме «Общее» выберите содержимое. «Классы» показывают предмет, «Учителя» и «Кабинеты» — классы. Сокращения и подгруппы действуют во всех режимах.</p><div class="form-grid">${[['subject','Предмет'],['teacher','Учитель: фамилия и инициалы'],['room','Номер кабинета'],['group','Подгруппа / профиль'],['abbreviate','Сокращения предметов']].map(([k,n])=>`<label class="checkbox-line"><input type="checkbox" data-studio-field="${k}" ${v[k]?'checked':''}>${n}</label>`).join('')}</div>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Применить',class:'primary',action:()=>{settings.studioDisplay=Object.fromEntries($$('[data-studio-field]').map(e=>[e.dataset.studioField,e.checked]));$('#dialog').close();dirty=true;render()}}]);
 };
 const studioOldLesson=showLesson;
 showLesson=function(id,initial){

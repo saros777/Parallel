@@ -23,7 +23,9 @@ function minutes(l){
  const m=(l.time||'').match(/(\d{1,2}):(\d{2})\s*[-–]\s*(\d{1,2}):(\d{2})/);
  return m?[+m[1]*60 + +m[2],+m[3]*60 + +m[4]]:[l.slot*60,l.slot*60+45];
 }
-function overlap(a,b){const x=minutes(a),y=minutes(b);return !a.parked&&!b.parked&&!a.suspended&&!b.suspended&&a.date===b.date&&x[0]<y[1]&&y[0]<x[1]}
+// Grid coordinates are the scheduling authority; bell text is descriptive only.
+function overlap(a,b){return !a.cancelled&&!b.cancelled&&!a.parked&&!b.parked&&!a.suspended&&!b.suspended&&a.date===b.date&&Number.isInteger(a.slot)&&a.slot===b.slot}
+
 const profileKeys=['social','chemical','physical'];
 const profileNames={social:'Социально-гуманитарный',chemical:'Химико-биологический',physical:'Физико-математический'};
 const profileShort={social:'СГ',chemical:'ХБ',physical:'ФМ'};
@@ -98,7 +100,6 @@ function conflicts(db,rows=effective(db)){
 function changeIssues(candidate,db,rows=effective(db),ignore=[]){
  const issues=root.StudioModel?root.StudioModel.restrictions(candidate,db):[];
  if(!candidate.cancelled&&!candidate.parked){
-  if(!candidate.time)issues.push('Для этого слота неизвестно время звонка');
   if(absenceFor(candidate,db))issues.push('Учитель отмечен отсутствующим');
   if(db.preferences?.roomPolicy?.enabled&&candidate.roomMode==='auto'&&!candidate.roomId)issues.push('Нет свободного кабинета: выберите другой слот или добавьте кабинет');
   for(const other of rows)if(other.id!==candidate.id&&!ignore.includes(other.id))issues.push(...pairIssues(candidate,other,db));
@@ -186,7 +187,6 @@ function newIssues(db,patches){
  const existing=new Set(conflicts(db,original).map(key));
  const errors=conflicts(db,after).filter(x=>!existing.has(key(x)));
  for(const p of patches)if(!p.after.cancelled&&!p.after.parked){
-  if(!p.after.time)errors.push({kind:'Неизвестно время звонка',lessonIds:[p.id]});
   if((db.calendar||[]).some(c=>c.classId===p.after.classId&&c.date===p.after.date&&c.isHoliday))errors.push({kind:'Неучебный день',lessonIds:[p.id]});
  }
  return errors;

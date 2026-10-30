@@ -49,6 +49,7 @@
   return out;
  }
  function suspended(l,db){if(!db.preferences?.studioSuspensions||l.parked||l.cancelled)return false;const a=(db.absences||[]).find(a=>a.teacherId===l.teacherId&&a.startDate<=l.date&&a.endDate>=l.date&&l.slot>=(a.startSlot||1)&&l.slot<=(a.endSlot||20));return !!(a&&l.absenceReturnFor!==a.id)}
- const api={suspended,day,add,monday,signature,anchor,template,expand,commitBase,restrictions};
+ function targetAllowed(l,axis,entity){return l[axis==='teachers'?'teacherId':axis==='rooms'?'roomId':'classId']===entity}
+ const api={targetAllowed,suspended,day,add,monday,signature,anchor,template,expand,commitBase,restrictions};
  root.StudioModel=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

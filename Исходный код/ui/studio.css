@@ -44,3 +44,14 @@
 .directory-tools{display:flex;gap:10px;align-items:center;margin-bottom:10px}.directory-tools input{max-width:340px}.directory-tabs{display:flex;flex-wrap:wrap;gap:6px}.directory-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.directory-form label{display:flex;flex-direction:column;gap:4px;font-size:12px}.directory-form input,.directory-form select{width:100%}.directory-form .full{grid-column:1/-1}.week-days{display:flex;gap:10px;flex-wrap:wrap}.week-days label{display:flex;gap:3px;align-items:center}.week-days input{width:auto}.teacher-courses{width:100%;font-size:12px}.teacher-courses button{min-height:25px;padding:2px 6px}.inline-tools{display:flex;justify-content:space-between;align-items:center;margin-top:14px}
 @media(max-width:900px){.studio-page .sidebar{gap:6px;height:32px!important;min-height:32px}.studio-page .brand{display:none}.studio-page .sidebar .nav-button{min-height:30px;padding:6px;font-size:10px}.studio-page .topbar small{display:none}.studio-toolbar{gap:2px}.studio-toolbar button{font-size:10px;padding:2px 4px}.studio-page .top-actions #save-state{display:inline!important;flex-basis:auto;order:0}.studio-page .topbar #school-label{max-width:36vw;white-space:nowrap;overflow:hidden;display:block;text-overflow:ellipsis}.studio-page .top-actions{flex-wrap:nowrap}.studio-matrix tbody th{font-size:8px}.studio-matrix thead th{font-size:8px}}
 @media print{#studio-workspace,#studio-ghost{display:none!important}}
+
+/* The class/teacher grid uses the same occupancy calculation as placement. */
+.studio-card.lesson{display:flex!important;align-items:center;justify-content:center;text-align:center;font-size:var(--studio-font,var(--card-font,12px))!important;font-weight:650;line-height:1!important}
+.studio-tray .studio-card{font-size:var(--studio-font,var(--card-font,12px))!important}
+#studio-popover{position:fixed;z-index:2000;width:300px;max-width:calc(100vw - 12px);background:var(--surface);color:var(--text);border:1px solid #bd6370;border-radius:6px;box-shadow:0 5px 20px #0003;font-size:12px;padding:8px}
+#studio-popover header{display:flex;align-items:center;justify-content:space-between;gap:8px}
+#studio-popover header button{min-height:20px;height:20px;width:22px;padding:0;font-size:15px}
+#studio-popover .popover-body{max-height:110px;overflow:auto;padding:4px 0;color:var(--danger);line-height:1.35}
+#studio-popover ul{margin:3px 0;padding-left:17px}#studio-popover p{margin:3px 0}#studio-popover small{font-size:10px;color:var(--muted)}
+#studio-popover .popover-actions{display:flex;gap:5px;flex-wrap:wrap;margin-top:5px}
+#studio-popover .popover-actions button{flex:1;min-height:26px;padding:4px 6px;font-size:11px;line-height:1.2}

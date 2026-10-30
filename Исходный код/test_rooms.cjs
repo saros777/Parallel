@@ -12,7 +12,7 @@ d.overrides.a={roomId:'r3'};assert.equal(E.effective(d)[0].roomId,'r3','legacy m
 d=fixture();d.overrides.b={cancelled:true};d.overrides.a={teacherId:'t4',roomMode:'auto'};
 assert.equal(E.effective(d)[0].roomId,'r2','replacement home room');
 d=fixture();d.lessons[1]={...d.lessons[1],slot:2,time:'08:30 - 09:15'};d.preferences.roomPolicy.teacherRooms.t2='r1';
-rows=E.effective(d);assert.notEqual(rows[0].roomId,rows[1].roomId,'overlapping different bell slots');
+rows=E.effective(d);assert.equal(rows[0].roomId,rows[1].roomId,'different numbered slots remain free regardless of bell text');
 d=fixture();d.preferences.roomPolicy.pool=['r1'];d.preferences.roomPolicy.teacherRooms={};
 rows=E.effective(d);assert.equal(rows.filter(x=>!x.roomId).length,2);assert.equal(E.conflicts(d,rows).filter(x=>x.kind==='Нет свободного кабинета').length,2);
 d=fixture();d.lessons[1].groupName='1';d.lessons[2].groupName='2';d.lessons[2].classId='b';rows=E.effective(d);
