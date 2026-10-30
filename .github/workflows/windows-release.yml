@@ -85,7 +85,7 @@ jobs:
           Copy-Item 'Исходный код/dist/Parallel-5.2-Verification.json' $output
           git archive --format=zip --output="$output/Parallel-5.2-Source.zip" 'HEAD:Исходный код'
           if ($LASTEXITCODE -ne 0) { throw 'Source archive creation failed' }
-          Get-ChildItem $output -File | Sort-Object Name | ForEach-Object {
+          Get-ChildItem $output -File | Where-Object Name -ne 'Parallel-5.2-SHA256.txt' | Sort-Object Name | ForEach-Object {
             "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
           } | Set-Content -LiteralPath "$output/Parallel-5.2-SHA256.txt" -Encoding utf8NoBOM
           git config user.name 'Parallel build verification'

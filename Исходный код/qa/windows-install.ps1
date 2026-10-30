@@ -54,11 +54,14 @@ try {
     if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) { throw 'Defender must be active' }
     $report.defender = [ordered]@{
         engine = $status.AMEngineVersion; platform = $status.AMProductVersion
+        realTimeProtectionEnabled = $status.RealTimeProtectionEnabled
         signatures = $status.AntivirusSignatureVersion; signaturesUpdated = $status.AntivirusSignatureLastUpdated.ToUniversalTime().ToString('o')
     }
     if (Test-Path $data) { throw 'Dedicated clean Windows test machine required: default data folder already exists' }
     # Preserve the downloaded-file mark while scanning. Never unblock the file.
-    Set-Content -LiteralPath $msi -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
+    foreach ($markedFile in @($msi, (Join-Path $root 'dist\Parallel.exe'), (Join-Path $root 'dist\MicrosoftEdgeWebview2Setup.exe'))) {
+        Set-Content -LiteralPath $markedFile -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
+    }
     Scan-Path $msi
     Scan-Path (Join-Path $root 'dist\Parallel.exe')
     Scan-Path (Join-Path $root 'dist\MicrosoftEdgeWebview2Setup.exe')
