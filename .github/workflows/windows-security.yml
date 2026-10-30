@@ -24,12 +24,23 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Keep the sample private: do not automatically submit repository binaries.
-          Set-MpPreference -SubmitSamplesConsent 2
-          Update-MpSignature
-          $status = Get-MpComputerStatus
-          $status | Select-Object AMServiceEnabled,AntivirusEnabled,AntivirusSignatureVersion,AntivirusSignatureLastUpdated | Format-List
-          if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) { throw 'Defender is unavailable; no clean verdict can be claimed' }
+          try {
+            $service = Get-Service WinDefend -ErrorAction Stop
+            if ($service.Status -ne 'Running') {
+              Set-Service WinDefend -StartupType Automatic
+              Start-Service WinDefend
+            }
+            # Keep the sample private: do not automatically submit repository binaries.
+            Set-MpPreference -SubmitSamplesConsent 2
+            Update-MpSignature
+            $status = Get-MpComputerStatus
+            $status | Select-Object AMServiceEnabled,AntivirusEnabled,AntivirusSignatureVersion,AntivirusSignatureLastUpdated | Format-List
+            if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) { throw 'Defender is unavailable; no clean verdict can be claimed' }
+          } catch {
+            $message = $_.Exception.Message -replace '[\r\n]+',' '
+            Write-Output "::error title=Defender prerequisite unavailable::$message"
+            throw
+          }
       - name: Scan exact withdrawn installer
         shell: pwsh
         run: |
@@ -109,4 +120,16 @@ jobs:
             if (-not $app.HasExited) { $app.Kill() }
             $log = Join-Path $dir 'application.log'
             if (Test-Path $log) { Get-Content $log }
+          }
+      - name: Record Defender findings
+        if: always()
+        shell: pwsh
+        run: |
+          if (Get-Command Get-MpThreat -ErrorAction SilentlyContinue) {
+            try {
+              foreach ($threat in Get-MpThreat -ErrorAction Stop) {
+                Write-Output "::error title=Defender detection::$($threat.ThreatName) (ThreatID $($threat.ThreatID))"
+              }
+              Get-MpThreatDetection | Select-Object ThreatID,Resources,ActionSuccess | Format-List
+            } catch { Write-Output "Defender findings unavailable: $($_.Exception.Message)" }
           }
