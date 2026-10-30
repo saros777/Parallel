@@ -71,21 +71,32 @@ jobs:
         working-directory: Исходный код
         run: |
           $ErrorActionPreference = 'Stop'
-          go test -mod=vendor ./...
-          if ($LASTEXITCODE -ne 0) { throw 'Go tests failed' }
-          $env:CGO_ENABLED = '0'
-          $env:GOOS = 'windows'
-          $env:GOARCH = 'amd64'
-          New-Item -ItemType Directory -Force dist | Out-Null
-          go build -mod=vendor -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel.exe .
-          if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
-          $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
-          & $scanner -Scan -ScanType 3 -File (Join-Path $PWD 'dist\Parallel.exe')
-          if ($LASTEXITCODE -ne 0) { throw 'Defender rejected native executable' }
-          $bootstrap = Join-Path $PWD 'vendor\github.com\wailsapp\wails\v2\internal\webview2runtime\MicrosoftEdgeWebview2Setup.exe'
-          $sig = Get-AuthenticodeSignature $bootstrap
-          $sig | Select-Object Status,StatusMessage,SignerCertificate | Format-List
-          if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw 'Microsoft bootstrapper signature not verified' }
+          try {
+            $testOutput = go test -mod=vendor ./... 2>&1
+            $testExit = $LASTEXITCODE
+            $testOutput | ForEach-Object { Write-Output $_ }
+            if ($testExit -ne 0) {
+              $detail = ($testOutput | Select-Object -Last 12) -join ' '
+              throw "Go tests failed: $detail"
+            }
+            $env:CGO_ENABLED = '0'
+            $env:GOOS = 'windows'
+            $env:GOARCH = 'amd64'
+            New-Item -ItemType Directory -Force dist | Out-Null
+            go build -mod=vendor -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel.exe .
+            if ($LASTEXITCODE -ne 0) { throw 'Native build failed' }
+            $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
+            & $scanner -Scan -ScanType 3 -File (Join-Path $PWD 'dist\Parallel.exe')
+            if ($LASTEXITCODE -ne 0) { throw "Defender rejected native executable: exit $LASTEXITCODE" }
+            $bootstrap = Join-Path $PWD 'vendor\github.com\wailsapp\wails\v2\internal\webview2runtime\MicrosoftEdgeWebview2Setup.exe'
+            $sig = Get-AuthenticodeSignature $bootstrap
+            $sig | Select-Object Status,StatusMessage,SignerCertificate | Format-List
+            if ($sig.Status -ne 'Valid' -or $sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') { throw "Microsoft bootstrapper signature not verified: $($sig.Status) / $($sig.StatusMessage)" }
+          } catch {
+            $message = $_.Exception.Message -replace '[\r\n]+',' '
+            Write-Output "::error title=Native build or scan failure::$message"
+            throw
+          }
       - name: Verify native window, frontend startup and safe close
         shell: pwsh
         working-directory: Исходный код
