@@ -1,3 +1,3 @@
-85be118d18d01e4369cf32245326637ae671dd8ceb2623dac618cef02ddce0c6  Parallel-5.2-Source.zip
-d7c1a4628e242e589ed1b6c40ff590df617f7f0699aab1cd95505ecc8b59a73f  Parallel-5.2-Verification.json
-694b157f9985465a81b70c6edb9f744c312f3ed27d0a4da79b5079fb2d62f5aa  Parallel-5.2-x64.msi
+4b3fce3dfd8d5d82322aa8c6d482112417c77cbdacd590db23f044e4298f29e9  Parallel-5.2-Source.zip
+debc017ede3a7fda17f0f7be1cdb664fde4bce8084f3b0c66631ae3dcb549170  Parallel-5.2-Verification.json
+9928ff66c5081247c6315431bb97acffc3cce5c42fa57b10cc71a72604c58fe7  Parallel-5.2-x64.msi

@@ -1,6 +1,6 @@
 {
   "version": "5.2.0",
-  "sourceCommit": "89e85de2e21ddec95b52cbb1696dba9ac0211361",
+  "sourceCommit": "e1677723c1efb4334cc34e7f4aa6887f86bd7a18",
   "os": "Microsoft Windows NT 10.0.20348.0",
   "installerFormat": "Windows Installer MSI",
   "installerScripts": "none",
@@ -12,14 +12,16 @@
     "msiInstallAndInstalledPayloadScan": "passed",
     "installedNativeWindowIpcAutosaveClose": "passed; default data folder; no HTTP listener",
     "msiRepairAndExistingWorkspace": "passed",
-    "msiUninstallPreservesWorkspace": "passed"
+    "msiUninstallPreservesWorkspace": "passed",
+    "sourceArchiveDefenderScan": "passed"
   },
   "defender": {
     "engine": "1.1.26100.4",
     "platform": "4.18.26090.9",
+    "realTimeProtectionEnabled": false,
     "signatures": "1.463.39.0",
-    "signaturesUpdated": "2026-10-30T07:06:58.0000000Z"
+    "signaturesUpdated": "2026-10-30T07:06:58Z"
   },
   "verdict": "All specified checks passed in this environment. This does not clear the reported 5.1 detection or guarantee identical results on another device.",
-  "completedUtc": "2026-10-30T17:02:48.6706586Z"
+  "completedUtc": "2026-10-30T17:17:07.4397568Z"
 }
