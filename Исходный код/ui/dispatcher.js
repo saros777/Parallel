@@ -268,14 +268,16 @@ $('#file').onchange=async e=>{
  $('#file').value='';
 };
 async function boot(){
+ const timing=window.parallelStartup={bootMs:performance.now()};let stage=performance.now();
  $('#view').innerHTML='<div class="loading-screen"><span class="loading-spinner"></span><h2>Открываю расписание школы</h2><p>Рабочая база загружается автоматически.</p></div>';
  renderStatus();$('#controls').innerHTML='';$('#navigation').innerHTML='';
  try{
-  const res=await fetch(API+'/api/state');const result=await res.json();if(!res.ok)throw Error(result.error);
-  db=normalize(result.state);revision=result.revision;connected=true;
+  const res=await fetch(API+'/api/state');timing.fetchMs=performance.now()-stage;stage=performance.now();const result=await res.json();timing.jsonMs=performance.now()-stage;if(!res.ok)throw Error(result.error);
+  stage=performance.now();db=normalize(result.state);timing.normalizeMs=performance.now()-stage;revision=result.revision;connected=true;
   settings={...settings,...db.preferences,labels:db.preferences?.labels||{}};
-  fingerprint=stateMark();dirty=false;lastSaved=new Date(result.updated).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});loading=false;render();document.dispatchEvent(new CustomEvent('parallel:workspace-ready'));
+  stage=performance.now();fingerprint=stateMark();dirty=false;lastSaved=new Date(result.updated).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});loading=false;render();timing.renderMs=performance.now()-stage;timing.domReadyMs=performance.now();document.dispatchEvent(new CustomEvent('parallel:workspace-ready'));
  }catch(e){
+  window.go?.main?.DesktopBridge?.LogFrontendError?.(String(e.stack||e.message));
   loading=false;saveError=e.message;renderStatus();
   $('#view').innerHTML='<div class="empty-state"><h2>Рабочая база временно недоступна</h2><p>Данные не заменены демонстрацией. Попробуйте подключиться снова.</p><button id="retry-boot" class="primary">Повторить подключение</button></div>';
   $('#retry-boot').onclick=boot;

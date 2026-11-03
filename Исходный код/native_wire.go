@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"io"
+	"time"
 )
 
 type WireData struct {
@@ -57,11 +58,16 @@ func (b *DesktopBridge) RequestEncoded(path, method, data, encoding string) Wire
 	if err != nil {
 		return WireResponse{Status: 400, Content: WireData{Data: `{"error":"Неверный или слишком большой запрос"}`, Encoding: "utf8"}}
 	}
+	started := time.Now()
 	r := b.Request(path, method, string(raw))
+	readMS := time.Since(started).Milliseconds()
+	started = time.Now()
 	content := packWire([]byte(r.Body))
 	if path == "/api/state" && method == "GET" && r.Status == 200 {
 		b.stateJSONBytes.CompareAndSwap(0, int64(len(r.Body)))
 		b.stateWireBytes.CompareAndSwap(0, int64(len(content.Data)))
+		b.stateReadMS.Store(readMS)
+		b.statePackMS.Store(time.Since(started).Milliseconds())
 	}
 	return WireResponse{Status: r.Status, Content: content}
 }

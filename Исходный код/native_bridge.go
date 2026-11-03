@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -25,6 +26,8 @@ type DesktopBridge struct {
 	initialiseErr  error
 	stateJSONBytes atomic.Int64
 	stateWireBytes atomic.Int64
+	stateReadMS    atomic.Int64
+	statePackMS    atomic.Int64
 	store          *Store
 	projectMu      sync.Mutex
 	projectSession projectSession
@@ -64,15 +67,22 @@ func newDesktopBridge(dir string, deferRestore ...bool) (*DesktopBridge, error) 
 	}
 	return b, nil
 }
-func (b *DesktopBridge) Ready() {
+func (b *DesktopBridge) Ready(timings string) {
 	if b.ready.Swap(true) {
 		return
 	}
 	b.store.mu.Lock()
 	revision := b.store.data.Revision
 	b.store.mu.Unlock()
-	raw, _ := json.Marshal(map[string]any{"version": version, "readyUtc": time.Now().UTC().Format(time.RFC3339Nano), "elapsedMs": time.Since(appStarted).Milliseconds(), "revision": revision, "stateJSONBytes": b.stateJSONBytes.Load(), "stateIPCBytes": b.stateWireBytes.Load()})
+	var frontend map[string]any
+	if len(timings) <= 8192 {
+		_ = json.Unmarshal([]byte(timings), &frontend)
+	}
+	raw, _ := json.Marshal(map[string]any{"version": version, "readyUtc": time.Now().UTC().Format(time.RFC3339Nano), "elapsedMs": time.Since(appStarted).Milliseconds(), "revision": revision, "stateJSONBytes": b.stateJSONBytes.Load(), "stateIPCBytes": b.stateWireBytes.Load(), "stateReadMs": b.stateReadMS.Load(), "statePackMs": b.statePackMS.Load(), "frontend": frontend})
 	_ = atomicWrite(filepath.Join(b.dir, "startup-timing.json"), raw)
+}
+func (b *DesktopBridge) LogFrontendError(message string) {
+	log.Printf("Frontend error: %.4096s", message)
 }
 func (b *DesktopBridge) Request(path, method, body string) BridgeResponse {
 	<-b.initialised
