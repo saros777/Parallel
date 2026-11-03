@@ -101,7 +101,8 @@ func runDesktop(dir string, initialPaths ...string) error {
 	return wails.Run(&options.App{
 		Title: "Параллель · Расписание школы", Width: 1440, Height: 900, MinWidth: 1024, MinHeight: 640,
 		WindowStartState: options.Maximised, BackgroundColour: options.NewRGB(244, 246, 249),
-		AssetServer: &assetserver.Options{Assets: desktopAssets{assets}}, Bind: []interface{}{bridge},
+		EnableFraudulentWebsiteDetection: true,
+		AssetServer:                      &assetserver.Options{Assets: desktopAssets{assets}}, Bind: []interface{}{bridge},
 		OnStartup: func(c context.Context) {
 			ctx = c
 			// Wails has acquired its single-instance lock before this callback.
@@ -148,6 +149,8 @@ func runDesktop(dir string, initialPaths ...string) error {
 				}
 			}
 		}},
-		Windows: &windows.Options{WebviewUserDataPath: filepath.Join(dir, "WebView2"), Messages: messages, Theme: windows.Light, WindowClassName: "ParallelSchoolDesktop", ResizeDebounceMS: 16},
+		// A timetable needs no 3D acceleration. Software rendering avoids the
+		// WebView2 GPU startup/fallback delay on office and virtual display drivers.
+		Windows: &windows.Options{WebviewUserDataPath: filepath.Join(dir, "WebView2"), Messages: messages, Theme: windows.Light, WindowClassName: "ParallelSchoolDesktop", ResizeDebounceMS: 16, WebviewGpuIsDisabled: true},
 	})
 }
