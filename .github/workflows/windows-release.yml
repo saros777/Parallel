@@ -68,7 +68,16 @@ jobs:
       - name: Defender, real MSI install, native window, repair and uninstall
         shell: pwsh
         working-directory: Исходный код
-        run: ./qa/windows-install.ps1
+        run: |
+          $ErrorActionPreference = 'Stop'
+          try { ./qa/windows-install.ps1 }
+          catch {
+            $detail = ($_.ToString() + ' ' + $_.ScriptStackTrace) -replace '[\r\n]+',' '
+            Write-Output "::error title=Windows verification failure::$detail"
+            $logPath = Join-Path $env:LOCALAPPDATA 'ParallelSchool/application.log'
+            if (Test-Path $logPath) { Get-Content $logPath -Tail 20 | ForEach-Object { Write-Output "::notice title=Native application log::$_" } }
+            throw
+          }
       - name: Fail on any Defender finding
         if: always()
         shell: pwsh

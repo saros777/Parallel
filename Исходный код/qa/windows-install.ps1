@@ -48,6 +48,7 @@ function Write-Fixture([string]$Marker = '') {
     @{path=$project;savedRevision=0;recent=@($project)} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $data 'project-session.json') -Encoding utf8NoBOM
 }
 function Run-NativeWindow([switch]$Association) {
+    Write-Output "::notice title=Native startup test::Association=$Association"
     $timingPath = Join-Path $data 'startup-timing.json'
     Remove-Item -LiteralPath $timingPath -ErrorAction SilentlyContinue
     $watch = [Diagnostics.Stopwatch]::StartNew()
@@ -68,6 +69,7 @@ function Run-NativeWindow([switch]$Association) {
         }
         if (-not $ready) { throw 'Installed application did not complete frontend IPC/rendering' }
         $watch.Stop()
+        Write-Output "::notice title=Native ready::$($timing | ConvertTo-Json -Compress)"
         if ($timing.elapsedMs -gt 8000) { throw "Native startup exceeded 8 seconds: $($timing.elapsedMs) ms" }
         if ($timing.stateIPCBytes -gt $timing.stateJSONBytes / 3) { throw 'Native IPC did not compress the full database' }
         $runName = if ($Association) { 'afterRepairViaFileAssociation' } else { 'firstInstalledLaunch' }
@@ -96,7 +98,9 @@ try {
     Scan-Path (Join-Path $root 'dist\Parallel.exe')
     Scan-Path (Join-Path $root 'dist\MicrosoftEdgeWebview2Setup.exe')
     $report.checks.defenderInstallerAndExecutables = 'passed; files retain Internet zone mark'
+    Write-Output '::notice title=Defender scans::MSI and executables passed'
     Invoke-Msi '/i' 'parallel-install.log'
+    Write-Output '::notice title=MSI installed::Installation completed'
     foreach ($name in @('Parallel.exe','MicrosoftEdgeWebview2Setup.exe')) {
         $installed = Join-Path $install $name
         if ((Get-FileHash -LiteralPath $installed).Hash -ne (Get-FileHash -LiteralPath (Join-Path $root "dist\$name")).Hash) { throw "Installed file hash mismatch: $name" }
@@ -104,6 +108,7 @@ try {
     Scan-Path $install
     $report.checks.msiInstallAndInstalledPayloadScan = 'passed'
     Write-Fixture
+    Write-Output '::notice title=Schedule fixture::Full original database prepared'
     Copy-Item -LiteralPath $project -Destination (Join-Path $root 'dist\Parallel-5.3-School.parallel')
     Scan-Path (Join-Path $root 'dist\Parallel-5.3-School.parallel')
     Run-NativeWindow
