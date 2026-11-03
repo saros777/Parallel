@@ -42,7 +42,8 @@
   const teachers=[...new Set(sources.map(x=>x.teacherId))].filter(id=>db.teachers.some(t=>t.id===id&&!t.hasMaternityVacation));
   return {teacherId:teachers[0]||null,teachers,courseId:(direct[0]||courses.find(sameGroup))?.id||original[0]?.courseId||null};
  }
- function teacherColor(id,db){if(!id)return '#e3e6eb';const ids=db.teachers.map(t=>t.id).sort(),i=ids.indexOf(id);return `hsl(${Math.round(((i<0?0:i)*137.508)%360)} 62% 79%)`}
+ const colorCache=new WeakMap();
+ function teacherColor(id,db){if(!id)return '#e3e6eb';let colors=colorCache.get(db.teachers);if(!colors||colors.size!==db.teachers.length){colors=new Map(db.teachers.map(t=>t.id).sort().map((id,i)=>[id,`hsl(${Math.round((i*137.508)%360)} 62% 79%)`]));colorCache.set(db.teachers,colors)}return colors.get(id)||'hsl(0 62% 79%)'}
  const api={active,slice,plan,assess,park,assignment,teacherColor};
  root.WorkbenchEngine=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

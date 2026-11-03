@@ -7,15 +7,13 @@ const studioFields=['classes','teachers','rooms','subjects','courses','groups','
 const studioEditableBefore=editable;
 editable=function(){return {...studioEditableBefore(),...Object.fromEntries(studioFields.map(k=>[k,structuredClone(db[k]??(k==='baseSchedule'?null:[]))])),preferences:structuredClone(settings)}};
 transact=function(label,fn){
- const before=editable();fn();const after=editable();
- const keys=Object.keys(before).filter(k=>JSON.stringify(before[k])!==JSON.stringify(after[k]));
- if(!keys.length)return;
- // Store only changed collections: a timetable move must not duplicate all directories.
- db.history.push({id:crypto.randomUUID(),at:new Date().toISOString(),label,before:Object.fromEntries(keys.map(k=>[k,before[k]])),after:Object.fromEntries(keys.map(k=>[k,after[k]]))});
+ const before=editable();fn();const entry=ProjectModel.historyEntry(label,before,editable());
+ if(!entry)return;
+ db.history.push(entry);if(db.history.length>200)db.history.splice(0,db.history.length-200);
  dirty=true;render();message(label+'.');
 };
 const studioUndoBefore=undo;
-undo=function(){const last=db.history.at(-1);if(last?.before?.preferences)settings=structuredClone(last.before.preferences);studioCancel();studioUndoBefore()};
+undo=function(){const last=db.history.at(-1);if(!last)return;if(last.format!==2){if(last.before?.preferences)settings=structuredClone(last.before.preferences);studioCancel();studioUndoBefore();return}db.history.pop();ProjectModel.restoreHistory(db,last);if(last.values?.preferences)settings=structuredClone(db.preferences);studioCancel();dirty=true;render();message('Отменено: '+last.label+'.')};
 stateMark=function(){return JSON.stringify([db.overrides,db.extraLessons,db.absences,db.history.length,settings,...studioFields.map(k=>db[k])])};
 const studioRenderBefore=render;
 render=function(){
@@ -46,12 +44,13 @@ card=function(l){
  if(studioAxis==='general'&&v.teacher)parts.push(studioTeacher(l.teacherId));
  if(studioAxis==='general'&&v.room)parts.push(l.roomId?PrintTools.roomNumber(roomName(l.roomId)):'—');
  if(v.group&&studioGroup(l))parts.push(studioGroup(l));
+ if(l.cycleWeeks===2)parts.push(l.cyclePhase?'II':'I');
  const color=lookup('teachers',l.teacherId)?.color||W.teacherColor(l.teacherId,db);
- return `<button type="button" class="lesson studio-card ${l.placementForced?'forced':''} ${studioPick?.id===l.id?'picked':''}" data-lesson="${h(l.id)}" style="--subject-color:${h(color)}" title="${h(studioBrief(l))}" aria-label="${h(studioBrief(l))}">${h(parts.join(' · ')||'·')}</button>`;
+ return `<button type="button" class="lesson studio-card ${l.placementForced?'forced':''} ${studioPick?.id===l.id?'picked':''}" data-lesson="${h(l.id)}" style="--subject-color:${h(color)};--text-length:${[...parts.join(' · ')].length||1};--text-em:${typeof studioTextMeasure==='function'?studioTextMeasure(parts.join(' · ')||'·'):1.8}" title="${h(studioBrief(l))}" aria-label="${h(studioBrief(l))}">${h(parts.join(' · ')||'·')}</button>`;
 };
 selected=function(){return db.classes.filter(c=>!selectedClasses||selectedClasses.has(c.id))};
 function studioContext(){
- if(studioPeriod==='base')return {...db,baseSchedule:null,lessons:SM.template(db),overrides:{},extraLessons:[],absences:[],calendar:[]};
+ if(studioPeriod==='base')return {...db,basePreview:true,baseSchedule:null,lessons:SM.template(db),overrides:{},extraLessons:[],absences:[],calendar:[]};
  return db;
 }
 function studioApply(label,patches,forced=false){
@@ -119,7 +118,9 @@ function studioTake(id){
  if(l.locked||l.cancelled){message('Сначала снимите закрепление или восстановите урок.');return}
  studioCancel();studioPick={id,cache:new Map()};selectedLesson=id;
  studioGhost=document.createElement('div');studioGhost.id='studio-ghost';studioGhost.innerHTML=card(l)+'<small>Выберите ячейку · Esc — отмена</small>';document.body.append(studioGhost);
- studioGhost.style.left=Math.min(innerWidth-180,studioPointer.x+12)+'px';studioGhost.style.top=Math.min(innerHeight-70,studioPointer.y+12)+'px';
+ const source=$$('[data-lesson]').find(e=>e.dataset.lesson===id),rect=source?.getBoundingClientRect();
+ studioGhost.style.setProperty('--ghost-width',Math.max(32,rect?.width||44)+'px');studioGhost.style.setProperty('--ghost-height',Math.max(14,rect?.height||22)+'px');studioGhost.style.setProperty('--ghost-font',source?getComputedStyle(source).fontSize:'12px');
+ studioGhost.style.transform=`translate3d(${Math.min(innerWidth-180,studioPointer.x+10)}px,${Math.min(innerHeight-70,studioPointer.y+10)}px,0)`;
  $$('[data-lesson]').filter(e=>e.dataset.lesson===id).forEach(e=>e.classList.add('picked'));
  const key=studioAxis==='teachers'?'teacherId':studioAxis==='rooms'?'roomId':'classId';
  $$('[data-row-head]').forEach(e=>{e.classList.toggle('target-ok',e.dataset.rowHead===l[key]);e.classList.toggle('target-block',e.dataset.rowHead!==l[key])});
@@ -128,9 +129,11 @@ function studioTake(id){
  // Yield between columns so picking up a card never waits for the whole week.
  const paintNext=()=>{
   if(studioPick!==pickup||nextHead>=heads.length)return;
-  const head=heads[nextHead++],[d,n]=head.dataset.colHead.split('|');
-  const td=$(`[data-entity="${l[key]}"][data-date="${d}"][data-slot="${n}"]`);
-  if(td){const result=studioAvailability(td);head.classList.remove('target-pending');head.classList.add(result.blocked?'target-block':result.notes.length?'target-bad':'target-ok')}
+  const started=performance.now();
+  do{const head=heads[nextHead++],[d,n]=head.dataset.colHead.split('|');
+   const td=$(`[data-entity="${l[key]}"][data-date="${d}"][data-slot="${n}"]`);
+   if(td){const result=studioAvailability(td);head.classList.remove('target-pending');head.classList.add(result.blocked?'target-block':result.notes.length?'target-bad':'target-ok')}
+  }while(nextHead<heads.length&&performance.now()-started<4);
   if(nextHead<heads.length)requestAnimationFrame(paintNext);
  };
  requestAnimationFrame(paintNext);
@@ -156,9 +159,9 @@ function studioTray(area,rows){
 }
 renderSchedule=function(){
  mode='week';compact=true;grade='all';classFilter='';
- studioWork=studioContext();studioRows=E.effective(studioWork);
  const week=studioPeriod==='base'?SM.anchor(db):monday(date);
  studioDates=Array.from({length:5},(_,i)=>E.addDays(week,i));
+ studioWork=studioContext();studioRows=studioPeriod==='base'?E.effective(studioWork):E.effectiveBetween(studioWork,studioDates[0],studioDates[4]);
  studioRows=studioRows.filter(l=>studioDates.includes(l.date));
  studioWork={...studioWork,baseSchedule:null,lessons:studioRows,extraLessons:[],overrides:{}};
  const ids=new Set(selected().map(c=>c.id));
@@ -171,9 +174,10 @@ renderSchedule=function(){
  studioSlots=Math.max(8,...visible.map(l=>l.slot));
  const index=new Map();for(const l of rows){const k=[l[key],l.date,l.slot].join('|');if(!index.has(k))index.set(k,[]);index.get(k).push(l)}
  $('#heading-actions').innerHTML='';
- $('#controls').innerHTML=`<div class="studio-toolbar"><div class="segmented"><button data-period="base" class="${studioPeriod==='base'?'active':''}">Основное расписание</button><button data-period="weeks" class="${studioPeriod==='weeks'?'active':''}">По неделям</button></div>${studioPeriod==='weeks'?dateBar()+'<button id="studio-today">Сегодня</button>':''}<div class="segmented">${[['classes','Классы'],['teachers','Учителя'],['rooms','Кабинеты'],['general','Общее']].map(([k,n])=>`<button data-studio-axis="${k}" class="${studioAxis===k?'active':''}">${n}</button>`).join('')}</div><button id="class-choice">Выбор классов</button><button id="display-settings">Вид карточки</button><span class="spacer"></span><button id="studio-absence">Отсутствие</button><button id="studio-print">Печать</button><button id="studio-undo" ${db.history.length?'':'disabled'}>Отменить</button></div>`;
+ if(typeof studioCanReuseView!=='function'||!studioCanReuseView()) $('#controls').innerHTML=`<div class="studio-toolbar"><div class="segmented"><button data-period="base" class="${studioPeriod==='base'?'active':''}">Основное расписание</button><button data-period="weeks" class="${studioPeriod==='weeks'?'active':''}">По неделям</button></div>${studioPeriod==='weeks'?dateBar()+'<button id="studio-today">Сегодня</button>':''}<div class="segmented">${[['classes','Классы'],['teachers','Учителя'],['rooms','Кабинеты'],['general','Общее']].map(([k,n])=>`<button data-studio-axis="${k}" class="${studioAxis===k?'active':''}">${n}</button>`).join('')}</div><button id="class-choice">Выбор классов</button><button id="display-settings">Вид карточки</button><span class="spacer"></span><button id="studio-absence">Отсутствие</button><button id="studio-print">Печать</button><button id="studio-undo" ${db.history.length?'':'disabled'}>Отменить</button></div>`;
  const problems=E.conflicts(studioWork,rows),problemIds=new Set(problems.flatMap(x=>x.lessonIds));
- $('#view').innerHTML=`<div class="studio-meta"><span>${studioPeriod==='base'?'Основа · изменения повторяются по неделям':fmt(studioDates[0])+' — '+fmt(studioDates[4])+' · исключения выбранной недели'} · ${studioEntities.length} строк</span><button id="studio-warnings">${problems.length} замечаний</button></div><div id="studio-workspace"><div class="studio-grid"><table class="studio-matrix"><colgroup><col class="entity-col">${studioDates.map(()=>Array.from({length:studioSlots},()=>'<col>').join('')).join('')}</colgroup><thead><tr><th rowspan="2">${type==='classes'?'Класс':type==='teachers'?'Учитель':'Кабинет'}</th>${studioDates.map(d=>`<th colspan="${studioSlots}">${days[SM.day(d)]}${studioPeriod==='weeks'?` <small>${fmt(d)}</small>`:''}</th>`).join('')}</tr><tr>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>`<th data-col-head="${d}|${i+1}">${i+1}</th>`).join('')).join('')}</tr></thead><tbody>${studioEntities.map(e=>`<tr><th data-row-head="${e.id}" title="${h(e.name)}">${h(type==='teachers'?studioTeacher(e.id):type==='rooms'?PrintTools.roomNumber(e.name):e.name)}</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const ls=E.sortProfileRows(index.get([e.id,d,i+1].join('|'))||[],db);return `<td data-entity="${e.id}" data-date="${d}" data-slot="${i+1}" tabindex="0" aria-label="${h(e.name)} ${days[SM.day(d)]} урок ${i+1}" class="${i===0?'day-start':''}"><div class="studio-stack">${ls.map(l=>card({...l,placementForced:l.placementForced||problemIds.has(l.id)})).join('')}</div></td>`}).join('')).join('')}</tr>`).join('')}</tbody></table></div><div id="studio-v-split" role="separator" aria-label="Ширина правой области" aria-orientation="vertical" tabindex="0"></div><aside id="studio-side" class="studio-tray" data-park="side">${studioTray('side',side)}</aside><div id="studio-h-split" role="separator" aria-label="Высота нижней области" aria-orientation="horizontal" tabindex="0"></div><section id="studio-bottom" class="studio-tray" data-park="bottom">${studioTray('bottom',bottom)}</section></div><div id="studio-hint" role="status">Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить</div>`;
+ const paint={index,problemIds,problems,key,side,bottom};if(typeof studioUpdateExisting==='function'&&studioUpdateExisting(paint))return;
+ $('#view').innerHTML=`<div class="studio-meta"><span>${studioPeriod==='base'?'Основа · изменения повторяются по неделям':fmt(studioDates[0])+' — '+fmt(studioDates[4])+' · исключения выбранной недели'} · ${studioEntities.length} строк</span><button id="studio-warnings">${problems.length} замечаний</button></div><div id="studio-workspace"><div class="studio-grid"><table class="studio-matrix"><colgroup><col class="entity-col">${studioDates.map(()=>Array.from({length:studioSlots},()=>'<col>').join('')).join('')}</colgroup><thead><tr><th rowspan="2">${type==='classes'?'Класс':type==='teachers'?'Учитель':'Кабинет'}</th>${studioDates.map(d=>`<th colspan="${studioSlots}">${days[SM.day(d)]}${studioPeriod==='weeks'?` <small>${fmt(d)}</small>`:''}</th>`).join('')}</tr><tr>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>`<th data-col-head="${d}|${i+1}">${i+1}</th>`).join('')).join('')}</tr></thead><tbody>${studioEntities.map(e=>`<tr><th data-row-head="${e.id}" title="${h(e.name)}">${h(type==='teachers'?studioTeacher(e.id):type==='rooms'?PrintTools.roomNumber(e.name):e.name)}</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const ls=E.sortProfileRows(index.get([e.id,d,i+1].join('|'))||[],db);return `<td data-entity="${e.id}" data-date="${d}" data-slot="${i+1}" tabindex="0" aria-label="${h(e.name)} ${days[SM.day(d)]} урок ${i+1}" class="${i===0?'day-start':''}"><div class="studio-stack" style="--parts:${Math.max(1,ls.length)}">${ls.map(l=>card({...l,placementForced:l.placementForced||problemIds.has(l.id)})).join('')}</div></td>`}).join('')).join('')}</tr>`).join('')}</tbody></table></div><div id="studio-v-split" role="separator" aria-label="Ширина правой области" aria-orientation="vertical" tabindex="0"></div><aside id="studio-side" class="studio-tray" data-park="side">${studioTray('side',side)}</aside><div id="studio-h-split" role="separator" aria-label="Высота нижней области" aria-orientation="horizontal" tabindex="0"></div><section id="studio-bottom" class="studio-tray" data-park="bottom">${studioTray('bottom',bottom)}</section></div><div id="studio-hint" role="status">Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить</div>`;
  $$('[data-period]').forEach(b=>b.onclick=()=>{studioCancel();studioPeriod=b.dataset.period;render()});
  $$('[data-studio-axis]').forEach(b=>b.onclick=()=>{studioCancel();studioAxis=b.dataset.studioAxis;render()});
  if(studioPeriod==='weeks'){bindDateBar(7);$('#studio-today').onclick=()=>{date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());render()}}
@@ -182,7 +186,7 @@ renderSchedule=function(){
  $('#studio-print').onclick=()=>{date=studioPeriod==='base'?SM.anchor(db):date;showPrint()};
  $('#studio-undo').onclick=undo;$('#studio-warnings').onclick=()=>setRoute('conflicts');
  $$('[data-tray-sort]').forEach(s=>s.onchange=()=>{studioFilters[s.dataset.traySort]=s.value;render()});
- bindCards();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
+ if(typeof studioRememberCells==='function')studioRememberCells(paint);bindCards();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
 };
 bindCards=function(){
  if(route!=='schedule'){ // Existing replacement desk uses selection, not pickup.
@@ -247,7 +251,8 @@ showAbsence=function(){
  studioAbsenceBefore();const b=$('#dialog-action-0'),act=b.onclick;
  b.textContent='Добавить и показать снятые уроки';b.onclick=()=>{act();if(!$('#dialog').open){studioPeriod='weeks';setRoute('schedule')}};
 };
-document.addEventListener('pointermove',e=>{studioPointer={x:e.clientX,y:e.clientY};if(studioGhost){studioGhost.style.left=Math.max(0,Math.min(innerWidth-180,e.clientX+12))+'px';studioGhost.style.top=Math.max(0,Math.min(innerHeight-70,e.clientY+12))+'px'}});
+let studioPointerFrame=0;
+document.addEventListener('pointermove',e=>{studioPointer={x:e.clientX,y:e.clientY};if(studioGhost&&!studioPointerFrame)studioPointerFrame=requestAnimationFrame(()=>{studioPointerFrame=0;if(studioGhost)studioGhost.style.transform=`translate3d(${Math.max(0,Math.min(innerWidth-180,studioPointer.x+10))}px,${Math.max(0,Math.min(innerHeight-70,studioPointer.y+10))}px,0)`})});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')studioCancel()});
 $('#dialog').addEventListener('close',()=>{$('#dialog').style.margin='';$('#dialog').style.left='';$('#dialog').style.top=''});
 const studioBootRender=render;

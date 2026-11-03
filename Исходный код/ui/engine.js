@@ -2,7 +2,12 @@
 (function(root){
 const id=x=>String(x??'');
 const addDays=(d,n)=>{const t=new Date(d+'T12:00:00Z');t.setUTCDate(t.getUTCDate()+n);return t.toISOString().slice(0,10)};
-function effective(db){const rows=(root.StudioModel?root.StudioModel.expand(db):[...db.lessons,...(db.extraLessons||[])]).map(x=>({...x,...(db.overrides||{})[x.id]})).map(l=>root.StudioModel?{...l,suspended:root.StudioModel.suspended(l,db)}:l);return root.RoomAllocator?root.RoomAllocator.resolve(db,rows):rows}
+function effective(db){const rows=(root.StudioModel?root.StudioModel.expand(db):[...db.lessons,...(db.extraLessons||[])]).map(x=>({...x,...(db.overrides||{})[x.id]})).filter(l=>!root.StudioModel||root.StudioModel.activeWeek(l,db)).map(l=>root.StudioModel?{...l,suspended:root.StudioModel.suspended(l,db)}:l);return root.RoomAllocator?root.RoomAllocator.resolve(db,rows):rows}
+function effectiveBetween(db,start,end){
+ const source=root.StudioModel?root.StudioModel.expand(db,start,end):[...db.lessons,...(db.extraLessons||[])];
+ const rows=source.map(l=>({...l,...db.overrides?.[l.id]})).filter(l=>l.date>=start&&l.date<=end&&(!root.StudioModel||root.StudioModel.activeWeek(l,db))).map(l=>({...l,suspended:!!root.StudioModel?.suspended(l,db)}));
+ return root.RoomAllocator?root.RoomAllocator.resolve({...db,baseSchedule:null,lessons:rows,extraLessons:[]},rows):rows;
+}
 function patchedDB(db,patches){
  const work={...db,overrides:{...db.overrides},extraLessons:[...(db.extraLessons||[])]};
  const ids=new Set([...db.lessons,...work.extraLessons].map(x=>x.id));
@@ -24,7 +29,7 @@ function minutes(l){
  return m?[+m[1]*60 + +m[2],+m[3]*60 + +m[4]]:[l.slot*60,l.slot*60+45];
 }
 // Grid coordinates are the scheduling authority; bell text is descriptive only.
-function overlap(a,b){return !a.cancelled&&!b.cancelled&&!a.parked&&!b.parked&&!a.suspended&&!b.suspended&&a.date===b.date&&Number.isInteger(a.slot)&&a.slot===b.slot}
+function overlap(a,b){return !a.cancelled&&!b.cancelled&&!a.parked&&!b.parked&&!a.suspended&&!b.suspended&&!(a.cycleWeeks===2&&b.cycleWeeks===2&&(a.cyclePhase||0)!==(b.cyclePhase||0))&&a.date===b.date&&Number.isInteger(a.slot)&&a.slot===b.slot}
 
 const profileKeys=['social','chemical','physical'];
 const profileNames={social:'Социально-гуманитарный',chemical:'Химико-биологический',physical:'Физико-математический'};
@@ -86,7 +91,7 @@ function pairIssues(a,b,db){
 function conflicts(db,rows=effective(db)){
  const out=[],days={};
  for(const x of rows.filter(x=>!x.cancelled&&!x.parked&&!x.suspended)){
-  (days[x.date]??=[]).push(x);
+  (days[x.date+'|'+x.slot]??=[]).push(x);
   if(!x.teacherId)out.push({lessonIds:[x.id],date:x.date,kind:'Не назначен учитель'});
   if(db.preferences?.roomPolicy?.enabled&&x.roomMode==='auto'&&!x.roomId)out.push({lessonIds:[x.id],date:x.date,kind:'Нет свободного кабинета'});
   for(const kind of root.StudioModel?.restrictions(x,db)||[])out.push({lessonIds:[x.id],date:x.date,kind});
@@ -244,7 +249,7 @@ function optimize(db,date,options={}){
  const patches=resolvePatches(db,[...changes.values()]);
  return {patches,unresolved,errors:newIssues(db,patches)};
 }
-const api={id,addDays,effective,minutes,overlap,disjoint,absenceFor,pairIssues,conflicts,changeIssues,candidates,subjectFamily,slotInfo,rebuild,validate,newIssues,transfer,optimize,patchedDB,resolvePatches,roomOnlyChange,profileKeys,profileNames,profileShort,classProfiles,profileAudience,profileRank,sortProfileRows,profileLines};
+const api={id,addDays,effective,effectiveBetween,minutes,overlap,disjoint,absenceFor,pairIssues,conflicts,changeIssues,candidates,subjectFamily,slotInfo,rebuild,validate,newIssues,transfer,optimize,patchedDB,resolvePatches,roomOnlyChange,profileKeys,profileNames,profileShort,classProfiles,profileAudience,profileRank,sortProfileRows,profileLines};
 root.ScheduleEngine=api;
 if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

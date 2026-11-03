@@ -22,7 +22,7 @@ try {
     if ($LASTEXITCODE -ne 0) { throw 'WiX tool restore failed' }
     dotnet tool run wix extension add WixToolset.UI.wixext/5.0.2
     if ($LASTEXITCODE -ne 0) { throw 'WiX UI extension restore failed' }
-    dotnet tool run wix build -arch x64 -culture ru-ru -ext WixToolset.UI.wixext -d "SourceDir=$root" -d "DistDir=$root\dist" -o dist/Parallel-5.2-x64.msi build/windows/installer.wxs
+    dotnet tool run wix build -arch x64 -culture ru-ru -ext WixToolset.UI.wixext -d "SourceDir=$root" -d "DistDir=$root\dist" -o dist/Parallel-5.3-x64.msi build/windows/installer.wxs
     if ($LASTEXITCODE -ne 0) { throw 'MSI build failed' }
-    Write-Host 'MSI: dist/Parallel-5.2-x64.msi'
+    Write-Host 'MSI: dist/Parallel-5.3-x64.msi'
 } finally { Pop-Location }

@@ -23,7 +23,7 @@ import (
 )
 
 func desktopSupported() bool { return true }
-func runDesktop(dir string) error {
+func runDesktop(dir string, initialPaths ...string) error {
 	if err := ensureWebView2(); err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func runDesktop(dir string) error {
 			}
 		}
 	}
-	bridge, err := newDesktopBridge(dir)
+	bridge, err := newDesktopBridge(dir, true)
 	if err != nil {
 		return err
 	}
@@ -62,6 +62,23 @@ func runDesktop(dir string) error {
 	var ctx context.Context
 	var closing atomic.Bool
 	bridge.quit = func() { closing.Store(true); wruntime.Quit(ctx) }
+	bridge.openFile = func(kind string) (string, error) {
+		filters := []wruntime.FileFilter{{DisplayName: "Расписание Параллель", Pattern: "*.parallel"}, {DisplayName: "Резервные копии JSON", Pattern: "*.json"}}
+		if kind == "table" {
+			filters = []wruntime.FileFilter{{DisplayName: "Таблицы Excel", Pattern: "*.xlsx"}, {DisplayName: "Текстовые таблицы CSV / TSV", Pattern: "*.csv;*.tsv"}}
+		}
+		return wruntime.OpenFileDialog(ctx, wruntime.OpenDialogOptions{Title: "Открыть файл", Filters: filters})
+	}
+	bridge.savePath = func(name, kind string) (string, error) {
+		pattern, label := "*.parallel", "Расписание Параллель"
+		if kind == "xlsx" {
+			pattern, label = "*.xlsx", "Таблица Excel"
+		}
+		if kind == "csv" {
+			pattern, label = "*.csv", "Таблица CSV"
+		}
+		return wruntime.SaveFileDialog(ctx, wruntime.SaveDialogOptions{Title: "Сохранить файл", DefaultFilename: name, Filters: []wruntime.FileFilter{{DisplayName: label, Pattern: pattern}}})
+	}
 	bridge.saveFile = func(name string, raw []byte) (bool, error) {
 		ext := strings.ToLower(filepath.Ext(name))
 		pattern := "*" + ext
@@ -85,7 +102,21 @@ func runDesktop(dir string) error {
 		Title: "Параллель · Расписание школы", Width: 1440, Height: 900, MinWidth: 1024, MinHeight: 640,
 		WindowStartState: options.Maximised, BackgroundColour: options.NewRGB(244, 246, 249),
 		AssetServer: &assetserver.Options{Assets: desktopAssets{assets}}, Bind: []interface{}{bridge},
-		OnStartup: func(c context.Context) { ctx = c },
+		OnStartup: func(c context.Context) {
+			ctx = c
+			// Wails has acquired its single-instance lock before this callback.
+			// A forwarded second launch must never restore over the active recovery.
+			bridge.initialiseErr = bridge.restoreProject()
+			if bridge.initialiseErr == nil && len(initialPaths) > 0 && initialPaths[0] != "" {
+				_, bridge.initialiseErr = bridge.stageProject(initialPaths[0])
+			}
+			close(bridge.initialised)
+			if bridge.initialiseErr != nil {
+				wruntime.MessageDialog(c, wruntime.MessageDialogOptions{Type: wruntime.ErrorDialog, Title: "Не удалось открыть расписание", Message: bridge.initialiseErr.Error()})
+				closing.Store(true)
+				wruntime.Quit(c)
+			}
+		},
 		OnBeforeClose: func(c context.Context) bool {
 			if closing.Load() || !bridge.ready.Load() {
 				return false
@@ -93,10 +124,28 @@ func runDesktop(dir string) error {
 			wruntime.EventsEmit(c, "parallel:close-request")
 			return true
 		},
-		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: appID, OnSecondInstanceLaunch: func(_ options.SecondInstanceData) {
+		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: appID, OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
+			<-bridge.initialised
 			if ctx != nil {
 				wruntime.WindowUnminimise(ctx)
 				wruntime.WindowShow(ctx)
+				for _, arg := range data.Args {
+					if strings.EqualFold(filepath.Ext(arg), ".parallel") {
+						path := arg
+						if !filepath.IsAbs(path) {
+							path = filepath.Join(data.WorkingDirectory, path)
+						}
+						bridge.projectMu.Lock()
+						selection, err := bridge.stageProject(path)
+						bridge.projectMu.Unlock()
+						if err == nil {
+							wruntime.EventsEmit(ctx, "parallel:project-request", selection)
+						} else {
+							wruntime.MessageDialog(ctx, wruntime.MessageDialogOptions{Type: wruntime.ErrorDialog, Title: "Не удалось открыть расписание", Message: err.Error()})
+						}
+						break
+					}
+				}
 			}
 		}},
 		Windows: &windows.Options{WebviewUserDataPath: filepath.Join(dir, "WebView2"), Messages: messages, Theme: windows.Light, WindowClassName: "ParallelSchoolDesktop", ResizeDebounceMS: 16},

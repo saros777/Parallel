@@ -1,7 +1,7 @@
 /* Desktop UX: all data remain on this computer, not in a cloud preview. */
-$('.brand small').textContent='ВЕРСИЯ 5.2 · ДИСПЕТЧЕР';
-titles.data=['База и резервные копии','Автосохранение на вашем компьютере'];
-$('footer').innerHTML='<span>Параллель 5.2 · На вашем компьютере · Без подключения к ВШ</span><button id="exit-application">Сохранить и выйти</button>';
+$('.brand small').textContent='ВЕРСИЯ 5.3 · ДИСПЕТЧЕР';
+titles.data=['Файлы и таблицы','Файлы расписаний · Excel и CSV · Восстановление'];
+$('footer').innerHTML='<span>Параллель 5.3 · На вашем компьютере · Без подключения к ВШ</span><button id="exit-application">Сохранить и выйти</button>';
 const desktopStatus=renderStatus;
 renderStatus=function(){
  desktopStatus();
@@ -34,4 +34,4 @@ renderData=function(){
 const normalizePlain=normalize;
 normalize=function(data){return normalizePlain(data?.state?.meta?data.state:data)};
 const nativeDesktopRender=render;
-render=function(){nativeDesktopRender();if($('#page-description')&&route==='data')$('#page-description').textContent='Автосохранение на вашем компьютере · Резервные копии · Исходный код'};
+render=function(){nativeDesktopRender();if($('#page-description')&&route==='data')$('#page-description').textContent='Файлы расписаний · Excel и CSV · Восстановление'};

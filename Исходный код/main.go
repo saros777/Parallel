@@ -29,8 +29,10 @@ import (
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "5.2.0"
+const version = "5.3.0"
 const appID = "parallel-school-desktop"
+
+var appStarted = time.Now()
 
 type Envelope struct {
 	Revision int             `json:"revision"`
@@ -64,7 +66,7 @@ func main() {
 	}
 	var err error
 	if desktopSupported() && !*noBrowser {
-		err = runDesktop(*dir)
+		err = runDesktop(*dir, flag.Arg(0))
 	} else {
 		err = run(*dir, *port, *noBrowser)
 	}
@@ -248,6 +250,10 @@ func (a *App) routes() http.Handler {
 		writeJSON(w, 200, map[string]any{"application": appID, "version": version})
 	})
 	mux.HandleFunc("/api/state", a.state)
+	mux.HandleFunc("/api/spreadsheet/read", spreadsheetHTTP)
+	mux.HandleFunc("/api/spreadsheet/write", spreadsheetHTTP)
+	mux.HandleFunc("/api/project/read", projectHTTP)
+	mux.HandleFunc("/api/project/write", projectHTTP)
 	mux.HandleFunc("/api/info", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]any{"version": version, "dataDir": a.store.dir})
 	})

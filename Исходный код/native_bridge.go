@@ -5,12 +5,14 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 )
@@ -18,20 +20,30 @@ import (
 // DesktopBridge reuses the validated store handlers via in-process IPC.
 // Native mode never listens on a TCP port and never launches a browser.
 type DesktopBridge struct {
-	ready    atomic.Bool
-	handler  http.Handler
-	token    string
-	origin   string
-	dir      string
-	quit     func()
-	saveFile func(string, []byte) (bool, error)
+	ready          atomic.Bool
+	initialised    chan struct{}
+	initialiseErr  error
+	stateJSONBytes atomic.Int64
+	stateWireBytes atomic.Int64
+	store          *Store
+	projectMu      sync.Mutex
+	projectSession projectSession
+	pendingProject *pendingProject
+	openFile       func(string) (string, error)
+	savePath       func(string, string) (string, error)
+	handler        http.Handler
+	token          string
+	origin         string
+	dir            string
+	quit           func()
+	saveFile       func(string, []byte) (bool, error)
 }
 type BridgeResponse struct {
 	Status int    `json:"status"`
 	Body   string `json:"body"`
 }
 
-func newDesktopBridge(dir string) (*DesktopBridge, error) {
+func newDesktopBridge(dir string, deferRestore ...bool) (*DesktopBridge, error) {
 	store, err := openStore(dir)
 	if err != nil {
 		return nil, err
@@ -40,14 +52,37 @@ func newDesktopBridge(dir string) (*DesktopBridge, error) {
 	if _, err = rand.Read(random[:]); err != nil {
 		return nil, err
 	}
-	b := &DesktopBridge{dir: dir, token: hex.EncodeToString(random[:]), origin: "http://parallel.desktop"}
+	b := &DesktopBridge{dir: dir, store: store, token: hex.EncodeToString(random[:]), origin: "http://parallel.desktop", initialised: make(chan struct{})}
 	app := &App{store: store, token: b.token, origin: b.origin}
 	b.handler = app.routes()
+	if len(deferRestore) == 0 || !deferRestore[0] {
+		b.initialiseErr = b.restoreProject()
+		close(b.initialised)
+		if b.initialiseErr != nil {
+			return nil, b.initialiseErr
+		}
+	}
 	return b, nil
 }
-func (b *DesktopBridge) Ready() { b.ready.Store(true) }
+func (b *DesktopBridge) Ready() {
+	if b.ready.Swap(true) {
+		return
+	}
+	b.store.mu.Lock()
+	revision := b.store.data.Revision
+	b.store.mu.Unlock()
+	raw, _ := json.Marshal(map[string]any{"version": version, "readyUtc": time.Now().UTC().Format(time.RFC3339Nano), "elapsedMs": time.Since(appStarted).Milliseconds(), "revision": revision, "stateJSONBytes": b.stateJSONBytes.Load(), "stateIPCBytes": b.stateWireBytes.Load()})
+	_ = atomicWrite(filepath.Join(b.dir, "startup-timing.json"), raw)
+}
 func (b *DesktopBridge) Request(path, method, body string) BridgeResponse {
-	allowed := map[string]bool{"/api/ping": true, "/api/state": true, "/api/info": true, "/api/open-folder": true, "/api/shutdown": true}
+	<-b.initialised
+	if b.initialiseErr != nil {
+		return BridgeResponse{500, `{"error":"Не удалось восстановить рабочую копию"}`}
+	}
+	return b.requestInternal(path, method, body)
+}
+func (b *DesktopBridge) requestInternal(path, method, body string) BridgeResponse {
+	allowed := map[string]bool{"/api/ping": true, "/api/state": true, "/api/info": true, "/api/open-folder": true, "/api/shutdown": true, "/api/spreadsheet/read": true, "/api/spreadsheet/write": true, "/api/project/read": true, "/api/project/write": true}
 	if !allowed[path] {
 		return BridgeResponse{404, `{"error":"Неизвестная команда"}`}
 	}

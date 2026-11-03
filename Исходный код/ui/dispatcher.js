@@ -17,7 +17,7 @@ $('footer').innerHTML='<span>Параллель 2 · Рабочая копия �
 function stateMark(){return JSON.stringify([db.overrides,db.extraLessons,db.absences,db.history.length,settings])}
 render=function(){
  nativeRender();
- if(connected&&!loading){const now=stateMark();if(now!==fingerprint||(dirty&&!saving&&!saveError)){fingerprint=now;dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(persist,500);renderStatus()}}
+ if(connected&&!loading){const now=stateMark();if(now!==fingerprint||(dirty&&!saving&&!saveError)){if(now!==fingerprint)window.parallelProjectChanged?.();fingerprint=now;dirty=true;clearTimeout(saveTimer);saveTimer=setTimeout(persist,800);renderStatus()}}
 };
 renderStatus=function(){
  $('#school-label').textContent=loading?'Подключение к рабочей базе…':db.meta.school;
@@ -34,7 +34,7 @@ async function persist(){
  saving=true;saveError='';renderStatus();db.preferences=settings;
  const snapshot=JSON.stringify(db),mark=stateMark();
  try{
-  const response=await fetch(API+'/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({revision,state:JSON.parse(snapshot)})});
+  const response=await fetch(API+'/api/state',{method:'PUT',headers:{'Content-Type':'application/json'},body:'{"revision":'+revision+',"state":'+snapshot+'}'});
   const result=await response.json();if(!response.ok)throw Error(result.error||'Ошибка сохранения');
   revision=result.revision;lastSaved=new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});
   dirty=stateMark()!==mark;
@@ -274,7 +274,7 @@ async function boot(){
   const res=await fetch(API+'/api/state');const result=await res.json();if(!res.ok)throw Error(result.error);
   db=normalize(result.state);revision=result.revision;connected=true;
   settings={...settings,...db.preferences,labels:db.preferences?.labels||{}};
-  fingerprint=stateMark();dirty=false;lastSaved=new Date(result.updated).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});loading=false;render();
+  fingerprint=stateMark();dirty=false;lastSaved=new Date(result.updated).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});loading=false;render();document.dispatchEvent(new CustomEvent('parallel:workspace-ready'));
  }catch(e){
   loading=false;saveError=e.message;renderStatus();
   $('#view').innerHTML='<div class="empty-state"><h2>Рабочая база временно недоступна</h2><p>Данные не заменены демонстрацией. Попробуйте подключиться снова.</p><button id="retry-boot" class="primary">Повторить подключение</button></div>';

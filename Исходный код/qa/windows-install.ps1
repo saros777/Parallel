@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$msi = Join-Path $root 'dist\Parallel-5.2-x64.msi'
+$msi = Join-Path $root 'dist\Parallel-5.3-x64.msi'
 $install = Join-Path $env:LOCALAPPDATA 'Programs\ParallelDesktop'
 $data = Join-Path $env:LOCALAPPDATA 'ParallelSchool'
 $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 $report = [ordered]@{
-    version = '5.2.0'; sourceCommit = (git -C $root rev-parse HEAD)
+    version = '5.3.0'; sourceCommit = (git -C $root rev-parse HEAD)
     os = [Environment]::OSVersion.VersionString
     installerFormat = 'Windows Installer MSI'; installerScripts = 'none'
     applicationSignature = 'NotSigned: no publisher code-signing certificate provided'
@@ -25,8 +25,33 @@ function Invoke-Msi([string]$Operation, [string]$LogName) {
         throw "MSI $Operation failed with exit $($p.ExitCode)"
     }
 }
-function Run-NativeWindow {
-    $app = Start-Process (Join-Path $install 'Parallel.exe') -PassThru
+$project = Join-Path $env:RUNNER_TEMP 'Parallel-5.3-School.parallel'
+function Write-Fixture([string]$Marker = '') {
+    $rawPath = Join-Path $env:RUNNER_TEMP 'parallel-fixture-state.json'
+    node (Join-Path $PSScriptRoot 'project-fixture.cjs') $rawPath
+    if ($LASTEXITCODE -ne 0) { throw 'Document fixture creation failed' }
+    $raw = Get-Content -Raw -LiteralPath $rawPath
+    if ($Marker) {
+        $fixture = $raw | ConvertFrom-Json -AsHashtable
+        $fixture.meta['installerVerificationMarker'] = $Marker
+        $raw = $fixture | ConvertTo-Json -Depth 100 -Compress
+    }
+    $zip = [IO.Compression.ZipArchive]::new([IO.File]::Create($project), [IO.Compression.ZipArchiveMode]::Create)
+    try {
+        foreach ($entry in @(@('manifest.json','{"format":"parallel-schedule","version":1}'),@('state.json',$raw))) {
+            $writer = [IO.StreamWriter]::new($zip.CreateEntry($entry[0]).Open(),[Text.UTF8Encoding]::new($false))
+            try { $writer.Write($entry[1]) } finally { $writer.Dispose() }
+        }
+    } finally { $zip.Dispose() }
+    New-Item -ItemType Directory -Force $data | Out-Null
+    ('{"revision":0,"updated":"2026-11-03T00:00:00Z","state":'+$raw+'}') | Set-Content -LiteralPath (Join-Path $data 'workspace.json') -Encoding utf8NoBOM
+    @{path=$project;savedRevision=0;recent=@($project)} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $data 'project-session.json') -Encoding utf8NoBOM
+}
+function Run-NativeWindow([switch]$Association) {
+    $timingPath = Join-Path $data 'startup-timing.json'
+    Remove-Item -LiteralPath $timingPath -ErrorAction SilentlyContinue
+    $watch = [Diagnostics.Stopwatch]::StartNew()
+    $app = if ($Association) { Start-Process $project -PassThru } else { Start-Process (Join-Path $install 'Parallel.exe') -PassThru }
     try {
         $ready = $false
         $statePath = Join-Path $data 'workspace.json'
@@ -34,14 +59,19 @@ function Run-NativeWindow {
             Start-Sleep -Milliseconds 250
             $app.Refresh()
             if ($app.HasExited) { throw 'Installed native application exited during startup' }
-            if ($app.MainWindowHandle -ne 0 -and (Test-Path $statePath)) {
+            if ($app.MainWindowHandle -ne 0 -and (Test-Path $timingPath)) {
                 try {
-                    $state = Get-Content -Raw $statePath | ConvertFrom-Json
-                    if ($state.revision -ge 1 -and $state.state.preferences.studioSuspensions) { $ready = $true; break }
+                    $timing = Get-Content -Raw $timingPath | ConvertFrom-Json
+                    if ($timing.stateJSONBytes -gt 0 -and $timing.stateIPCBytes -gt 0) { $ready = $true; break }
                 } catch { }
             }
         }
-        if (-not $ready) { throw 'Installed application did not complete frontend IPC/autosave' }
+        if (-not $ready) { throw 'Installed application did not complete frontend IPC/rendering' }
+        $watch.Stop()
+        if ($timing.elapsedMs -gt 8000) { throw "Native startup exceeded 8 seconds: $($timing.elapsedMs) ms" }
+        if ($timing.stateIPCBytes -gt $timing.stateJSONBytes / 3) { throw 'Native IPC did not compress the full database' }
+        $runName = if ($Association) { 'afterRepairViaFileAssociation' } else { 'firstInstalledLaunch' }
+        $report.checks[$runName] = @{elapsedMs=$timing.elapsedMs;observedReadyMs=$watch.ElapsedMilliseconds;stateJSONBytes=$timing.stateJSONBytes;stateIPCBytes=$timing.stateIPCBytes}
         if (Test-Path (Join-Path $data 'session.json')) { throw 'Native application started an HTTP session' }
         $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object OwningProcess -eq $app.Id)
         if ($listeners.Count) { throw 'Native application unexpectedly listens on TCP' }
@@ -73,27 +103,30 @@ try {
     }
     Scan-Path $install
     $report.checks.msiInstallAndInstalledPayloadScan = 'passed'
+    Write-Fixture
+    Copy-Item -LiteralPath $project -Destination (Join-Path $root 'dist\Parallel-5.3-School.parallel')
+    Scan-Path (Join-Path $root 'dist\Parallel-5.3-School.parallel')
     Run-NativeWindow
-    $report.checks.installedNativeWindowIpcAutosaveClose = 'passed; default data folder; no HTTP listener'
+    $report.checks.installedNativeWindowIpcClose = 'passed; full 16421-lesson document; no HTTP listener'
     $statePath = Join-Path $data 'workspace.json'
-    $state = Get-Content -Raw $statePath | ConvertFrom-Json -AsHashtable
-    $state.state.meta['installerVerificationMarker'] = 'preserve-existing-workspace'
-    $state | ConvertTo-Json -Depth 100 -Compress | Set-Content -LiteralPath $statePath -Encoding utf8NoBOM
+    Write-Fixture 'preserve-existing-workspace'
     Invoke-Msi '/fa' 'parallel-repair.log'
-    Run-NativeWindow
+    Run-NativeWindow -Association
     $state = Get-Content -Raw $statePath | ConvertFrom-Json
     if ($state.state.meta.installerVerificationMarker -ne 'preserve-existing-workspace') { throw 'Repair/restart replaced the existing workspace' }
     $report.checks.msiRepairAndExistingWorkspace = 'passed'
     $savedHash = (Get-FileHash -LiteralPath $statePath).Hash
+    $projectHash = (Get-FileHash -LiteralPath $project).Hash
     Invoke-Msi '/x' 'parallel-uninstall.log'
     if (Test-Path (Join-Path $install 'Parallel.exe')) { throw 'Uninstall did not remove the application' }
     if ((Get-FileHash -LiteralPath $statePath).Hash -ne $savedHash) { throw 'Uninstall removed or changed the saved workspace' }
+    if ((Get-FileHash -LiteralPath $project).Hash -ne $projectHash) { throw 'Uninstall removed or changed the schedule document' }
     $report.checks.msiUninstallPreservesWorkspace = 'passed'
     $threats = @(Get-MpThreat -ErrorAction Stop)
     if ($threats.Count) { throw "Defender recorded detections: $(($threats | ForEach-Object ThreatName) -join ', ')" }
     $report.verdict = 'All specified checks passed in this environment. This does not clear the reported 5.1 detection or guarantee identical results on another device.'
     $report.completedUtc = [DateTime]::UtcNow.ToString('o')
-    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'dist\Parallel-5.2-Verification.json') -Encoding utf8NoBOM
+    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'dist\Parallel-5.3-Verification.json') -Encoding utf8NoBOM
 } catch {
     $message = $_.Exception.Message -replace '[\r\n]+',' '
     Write-Output "::error title=Windows installer validation failed::$message"

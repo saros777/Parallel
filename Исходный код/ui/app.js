@@ -28,7 +28,8 @@ function normalize(data){
  out.overrides??={};
  if(typeof out.overrides!=='object'||Array.isArray(out.overrides))throw Error('Неверный формат изменений');
  // Validate effective data as well, so imported patches cannot bypass schema checks.
- E.validate({...out,lessons:E.effective(out)});
+ E.validate({...out,lessons:[...out.lessons,...out.extraLessons].map(l=>({...l,...out.overrides[l.id]}))});
+ if(out.baseSchedule)E.validate({...out,lessons:out.baseSchedule.lessons});
  return out;
 }
 const lookup=(key,id)=>db[key].find(x=>x.id===id);
@@ -72,7 +73,7 @@ function setRoute(r){route=r;message('');render()}
 function render(){
  renderStatus();$('#navigation').innerHTML=Object.entries(titles).map(([k,v],i)=>`<button class="nav-button ${route===k?'active':''}" data-route="${k}" data-testid="nav-${k}"><span>0${i+1}</span>${h(v[0])}</button>`).join('');
  $$('[data-route]').forEach(b=>b.onclick=()=>setRoute(b.dataset.route));
- $('#page-title').textContent=titles[route][0];$('#page-description').textContent=titles[route][1];$('#controls').innerHTML='';$('#heading-actions').innerHTML='';
+ $('#page-title').textContent=titles[route][0];$('#page-description').textContent=titles[route][1];if(!(route==='schedule'&&typeof studioCanReuseView==='function'&&studioCanReuseView()))$('#controls').innerHTML='';$('#heading-actions').innerHTML='';
  if(route==='schedule')renderSchedule();
  if(route==='absences')renderAbsences();
  if(route==='conflicts')renderConflicts();
@@ -251,7 +252,7 @@ function renderDirectory(){
 function renderHistory(){
  $('#heading-actions').innerHTML=`<button id="undo" ${db.history.length?'':'disabled'}>Отменить последнее действие</button>`;
  $('#undo').onclick=undo;
- $('#view').innerHTML=db.history.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Время</th><th>Действие</th><th>Изменений уроков после действия</th></tr></thead><tbody>${db.history.slice().reverse().map(x=>`<tr><td>${h(new Date(x.at).toLocaleString('ru-RU'))}</td><td>${h(x.label)}</td><td>${Object.keys(x.after?.overrides||{}).length}</td></tr>`).join('')}</tbody></table></div><p class="summary-note">История сохраняется внутри рабочего файла. Отмена применяется в обратном порядке; она не отправляется в ВШ.</p>`:'<div class="empty-state"><h2>Исходное расписание без изменений</h2><p>Здесь появятся замены, отмены, переносы и записи отсутствий, сделанные в рабочей копии.</p></div>';
+ $('#view').innerHTML=db.history.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Время</th><th>Действие</th><th>Изменений</th></tr></thead><tbody>${db.history.slice().reverse().map(x=>`<tr><td>${h(new Date(x.at).toLocaleString('ru-RU'))}</td><td>${h(x.label)}</td><td>${x.format===2?x.changes.length+Object.keys(x.values||{}).length:Object.keys(x.after?.overrides||{}).length}</td></tr>`).join('')}</tbody></table></div><p class="summary-note">История последних 200 действий сохраняется внутри рабочего файла. Отмена применяется в обратном порядке; она не отправляется в ВШ.</p>`:'<div class="empty-state"><h2>Исходное расписание без изменений</h2><p>Здесь появятся замены, отмены, переносы и записи отсутствий, сделанные в рабочей копии.</p></div>';
 }
 function renderData(){
  $('#view').innerHTML=`<div class="stats-grid">${[['classes','Классы'],['teachers','Учителя'],['subjects','Предметы'],['lessons','Исходные записи уроков']].map(([k,v])=>`<div class="stat-card"><strong>${db[k].length.toLocaleString('ru-RU')}</strong><span>${v}</span></div>`).join('')}</div>

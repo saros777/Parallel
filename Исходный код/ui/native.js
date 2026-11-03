@@ -11,15 +11,17 @@ if(window.DESKTOP?.native){
   }catch(e){message('Не удалось сохранить файл: '+e);return false}
  };
  let closing=false;
- window.runtime.EventsOn('parallel:close-request',async()=>{
+ window.parallelClose=async()=>{
   if(closing)return;closing=true;
   try{
    if(saving){message('Завершаю сохранение…');for(let i=0;i<100&&saving;i++)await new Promise(r=>setTimeout(r,100))}
    if(dirty)await persist();
    if(saveError||dirty||saving){message('Окно не закрыто: изменения ещё не сохранены. '+saveError);return}
+   if(window.parallelBeforeClose&&!await window.parallelBeforeClose())return;
    await native.Request('/api/shutdown','POST','');
   }finally{closing=false}
- });
+ };
+ window.runtime.EventsOn('parallel:close-request',window.parallelClose);
  document.documentElement.classList.add('native-window');
- native.Ready();
+ document.addEventListener('parallel:workspace-ready',()=>requestAnimationFrame(()=>requestAnimationFrame(()=>native.Ready())),{once:true});
 }
