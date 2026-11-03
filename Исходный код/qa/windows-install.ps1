@@ -73,7 +73,7 @@ function Run-NativeWindow([switch]$Association) {
         if ($timing.elapsedMs -gt 8000) { throw "Native startup exceeded 8 seconds: $($timing.elapsedMs) ms" }
         if ($timing.stateIPCBytes -gt $timing.stateJSONBytes / 3) { throw 'Native IPC did not compress the full database' }
         $runName = if ($Association) { 'afterRepairViaFileAssociation' } else { 'firstInstalledLaunch' }
-        $report.checks[$runName] = @{elapsedMs=$timing.elapsedMs;observedReadyMs=$watch.ElapsedMilliseconds;stateJSONBytes=$timing.stateJSONBytes;stateIPCBytes=$timing.stateIPCBytes}
+        $report.checks[$runName] = @{elapsedMs=$timing.elapsedMs;observedReadyMs=$watch.ElapsedMilliseconds;stateJSONBytes=$timing.stateJSONBytes;stateIPCBytes=$timing.stateIPCBytes;stateReadMs=$timing.stateReadMs;statePackMs=$timing.statePackMs;frontend=$timing.frontend}
         if (Test-Path (Join-Path $data 'session.json')) { throw 'Native application started an HTTP session' }
         $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object OwningProcess -eq $app.Id)
         if ($listeners.Count) { throw 'Native application unexpectedly listens on TCP' }
