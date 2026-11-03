@@ -1,3 +1,4 @@
+[hidden]{display:none!important}
 #project-name{max-width:230px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:11px;color:var(--muted)}
 #project-menu{position:fixed;z-index:2500;width:300px;max-width:calc(100vw - 12px);padding:6px;background:var(--surface);border:1px solid var(--border);border-radius:6px;box-shadow:0 8px 28px #0003}
 #project-menu button{display:flex;align-items:center;justify-content:space-between;width:100%;border:0;text-align:left;background:transparent;min-height:30px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#project-menu button:hover,#project-menu button:focus{background:var(--surface-alt,#eef3fb)}#project-menu small{margin-left:18px;color:var(--muted)}#project-menu>strong{display:block;padding:7px 9px;font-size:11px;color:var(--muted)}

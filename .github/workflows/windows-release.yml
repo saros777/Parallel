@@ -106,6 +106,14 @@ jobs:
           git add releases/5.3
           git commit -m 'Publish Windows-tested MSI 5.3, matching source and verification report'
           if ($LASTEXITCODE -ne 0) { throw 'Verified output commit failed' }
+          git ls-remote --exit-code --heads origin refs/heads/codex/parallel-5.3-files | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            git fetch origin refs/heads/codex/parallel-5.3-files
+            if ($LASTEXITCODE -ne 0) { throw 'Could not read previous verified release history' }
+            # Keep this run's verified snapshot while retaining prior publication ancestry.
+            git merge --strategy=ours --no-edit FETCH_HEAD
+            if ($LASTEXITCODE -ne 0) { throw 'Could not preserve release history' }
+          } elseif ($LASTEXITCODE -ne 2) { throw 'Could not check verified file branch' }
           $pushOutput = git push origin HEAD:refs/heads/codex/parallel-5.3-files 2>&1
           $pushExit = $LASTEXITCODE
           $pushOutput | ForEach-Object { Write-Output $_ }
