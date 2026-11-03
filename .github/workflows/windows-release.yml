@@ -32,13 +32,22 @@ jobs:
           try {
             $service = Get-Service WinDefend
             if ($service.Status -ne 'Running') { Set-Service WinDefend -StartupType Automatic; Start-Service WinDefend }
-            Set-MpPreference -SubmitSamplesConsent 2
             for ($attempt = 1; $attempt -le 3; $attempt++) {
-              try { Update-MpSignature; break }
+              try {
+                $rpcReady = $false
+                for ($probe = 0; $probe -lt 30; $probe++) {
+                  try { $status = Get-MpComputerStatus; if ($status.AMServiceEnabled) { $rpcReady = $true; break } } catch { }
+                  Start-Sleep -Seconds 2
+                }
+                if (-not $rpcReady) { throw 'Defender RPC service did not become ready' }
+                Set-MpPreference -SubmitSamplesConsent 2
+                if ($attempt -eq 2) { Update-MpSignature -UpdateSource MMPC } else { Update-MpSignature -UpdateSource MicrosoftUpdateServer }
+                break
+              }
               catch {
                 if ($attempt -eq 3) { throw }
                 Write-Output "::notice title=Retry Defender signature update::$($_.Exception.Message)"
-                Start-Sleep -Seconds 3
+                Start-Sleep -Seconds 10
               }
             }
             $s = Get-MpComputerStatus
