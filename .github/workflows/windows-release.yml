@@ -29,12 +29,21 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $service = Get-Service WinDefend
-          if ($service.Status -ne 'Running') { Set-Service WinDefend -StartupType Automatic; Start-Service WinDefend }
-          Set-MpPreference -SubmitSamplesConsent 2
-          Update-MpSignature
-          $s = Get-MpComputerStatus
-          if (-not $s.AMServiceEnabled -or -not $s.AntivirusEnabled) { throw 'Defender unavailable; release blocked' }
+          try {
+            $service = Get-Service WinDefend
+            if ($service.Status -ne 'Running') { Set-Service WinDefend -StartupType Automatic; Start-Service WinDefend }
+            Set-MpPreference -SubmitSamplesConsent 2
+            for ($attempt = 1; $attempt -le 3; $attempt++) {
+              try { Update-MpSignature; break }
+              catch {
+                if ($attempt -eq 3) { throw }
+                Write-Output "::notice title=Retry Defender signature update::$($_.Exception.Message)"
+                Start-Sleep -Seconds 3
+              }
+            }
+            $s = Get-MpComputerStatus
+            if (-not $s.AMServiceEnabled -or -not $s.AntivirusEnabled) { throw 'Defender unavailable; release blocked' }
+          } catch { Write-Output "::error title=Defender preparation failed::$($_.Exception.Message)"; throw }
       - name: Go and schedule regression tests
         shell: pwsh
         working-directory: Исходный код
