@@ -149,8 +149,6 @@ func runDesktop(dir string, initialPaths ...string) error {
 				}
 			}
 		}},
-		// A timetable needs no 3D acceleration. Software rendering avoids the
-		// WebView2 GPU startup/fallback delay on office and virtual display drivers.
-		Windows: &windows.Options{WebviewUserDataPath: filepath.Join(dir, "WebView2"), Messages: messages, Theme: windows.Light, WindowClassName: "ParallelSchoolDesktop", ResizeDebounceMS: 16, WebviewGpuIsDisabled: true},
+		Windows: &windows.Options{WebviewUserDataPath: filepath.Join(dir, "WebView2"), Messages: messages, Theme: windows.Light, WindowClassName: "ParallelSchoolDesktop", ResizeDebounceMS: 16},
 	})
 }

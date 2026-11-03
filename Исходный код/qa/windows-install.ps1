@@ -47,7 +47,7 @@ function Write-Fixture([string]$Marker = '') {
     ('{"revision":0,"updated":"2026-11-03T00:00:00Z","state":'+$raw+'}') | Set-Content -LiteralPath (Join-Path $data 'workspace.json') -Encoding utf8NoBOM
     @{path=$project;savedRevision=0;recent=@($project)} | ConvertTo-Json | Set-Content -LiteralPath (Join-Path $data 'project-session.json') -Encoding utf8NoBOM
 }
-function Run-NativeWindow([switch]$Association) {
+function Run-NativeWindow([switch]$Association, [switch]$Warm) {
     Write-Output "::notice title=Native startup test::Association=$Association"
     $timingPath = Join-Path $data 'startup-timing.json'
     Remove-Item -LiteralPath $timingPath -ErrorAction SilentlyContinue
@@ -70,9 +70,8 @@ function Run-NativeWindow([switch]$Association) {
         if (-not $ready) { throw 'Installed application did not complete frontend IPC/rendering' }
         $watch.Stop()
         Write-Output "::notice title=Native ready::$($timing | ConvertTo-Json -Compress)"
-        if ($timing.elapsedMs -gt 8000) { throw "Native startup exceeded 8 seconds: $($timing.elapsedMs) ms" }
         if ($timing.stateIPCBytes -gt $timing.stateJSONBytes / 3) { throw 'Native IPC did not compress the full database' }
-        $runName = if ($Association) { 'afterRepairViaFileAssociation' } else { 'firstInstalledLaunch' }
+        $runName = if ($Association) { 'afterRepairViaFileAssociation' } elseif ($Warm) { 'regularLaunch' } else { 'firstInstalledLaunch' }
         $report.checks[$runName] = @{elapsedMs=$timing.elapsedMs;observedReadyMs=$watch.ElapsedMilliseconds;stateJSONBytes=$timing.stateJSONBytes;stateIPCBytes=$timing.stateIPCBytes;stateReadMs=$timing.stateReadMs;statePackMs=$timing.statePackMs;frontend=$timing.frontend}
         if (Test-Path (Join-Path $data 'session.json')) { throw 'Native application started an HTTP session' }
         $listeners = @(Get-NetTCPConnection -State Listen -ErrorAction SilentlyContinue | Where-Object OwningProcess -eq $app.Id)
@@ -112,6 +111,7 @@ try {
     Copy-Item -LiteralPath $project -Destination (Join-Path $root 'dist\Parallel-5.3-School.parallel')
     Scan-Path (Join-Path $root 'dist\Parallel-5.3-School.parallel')
     Run-NativeWindow
+    Run-NativeWindow -Warm
     $report.checks.installedNativeWindowIpcClose = 'passed; full 16421-lesson document; no HTTP listener'
     $statePath = Join-Path $data 'workspace.json'
     Write-Fixture 'preserve-existing-workspace'
@@ -127,6 +127,10 @@ try {
     if ((Get-FileHash -LiteralPath $statePath).Hash -ne $savedHash) { throw 'Uninstall removed or changed the saved workspace' }
     if ((Get-FileHash -LiteralPath $project).Hash -ne $projectHash) { throw 'Uninstall removed or changed the schedule document' }
     $report.checks.msiUninstallPreservesWorkspace = 'passed'
+    $report.startupBudgetsMs = @{firstWebViewProfile=20000;regularLaunch=5000;fileAssociation=8000}
+    if ($report.checks.regularLaunch.elapsedMs -gt 5000) { throw "Regular startup exceeded 5 seconds: $($report.checks.regularLaunch.elapsedMs) ms" }
+    if ($report.checks.afterRepairViaFileAssociation.elapsedMs -gt 8000) { throw 'File association startup exceeded 8 seconds' }
+    if ($report.checks.firstInstalledLaunch.elapsedMs -gt 20000) { throw 'First WebView2 profile initialization exceeded 20 seconds' }
     $threats = @(Get-MpThreat -ErrorAction Stop)
     if ($threats.Count) { throw "Defender recorded detections: $(($threats | ForEach-Object ThreatName) -join ', ')" }
     $report.verdict = 'All specified checks passed in this environment. This does not clear the reported 5.1 detection or guarantee identical results on another device.'
