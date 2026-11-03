@@ -1,0 +1,4 @@
+e3178aa09b17704a62a273afe4a0f837719ec09a1e4c759b9af2ee9059969be6  Parallel-5.3-School.parallel
+2adb9c9e3d0bdc0c4c9c96448de277d7420ad4d65d6bf48e0b260aada87e413f  Parallel-5.3-Source.zip
+5b27beb8053fc423460077a7fe49537f9e7e666b5dcfd88d180d7e01b6e368f4  Parallel-5.3-Verification.json
+9b1c02e1b18257bde8af2663de260da484e1ae75ce7fa4f6ab0f93e0fbfdfb5f  Parallel-5.3-x64.msi
