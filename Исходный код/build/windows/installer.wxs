@@ -17,7 +17,7 @@
         <Directory Id="INSTALLFOLDER" Name="ParallelDesktop">
           <Component Id="Application" Guid="A8553CA3-E5ED-40A0-A33E-55CB5C59A511">
             <File Id="ParallelExe" Source="$(var.DistDir)\Parallel.exe" />
-            <ProgId Id="ParallelSchool.Schedule" Description="Расписание Параллель" Icon="ParallelIcon" Advertise="no">
+            <ProgId Id="ParallelSchool.Schedule" Description="Расписание Параллель" Icon="ParallelExe" Advertise="no">
               <Extension Id="parallel" ContentType="application/x-parallel-schedule">
                 <Verb Id="open" Command="Открыть" TargetFile="ParallelExe" Argument="&quot;%1&quot;" />
               </Extension>
