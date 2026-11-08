@@ -18,7 +18,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -29,7 +28,7 @@ import (
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "5.3.0"
+const version = "5.4.0"
 const appID = "parallel-school-desktop"
 
 var appStarted = time.Now()
@@ -38,6 +37,7 @@ type Envelope struct {
 	Revision int             `json:"revision"`
 	State    json.RawMessage `json:"state"`
 	Updated  string          `json:"updated"`
+	Project  *projectSession `json:"project,omitempty"`
 }
 type Session struct {
 	URL   string `json:"url"`
@@ -125,11 +125,16 @@ func run(dir string, port int, noBrowser bool) error {
 	f, err := os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 	if err != nil {
 		if st, e := os.Stat(lockPath); e == nil && time.Since(st.ModTime()) > time.Minute {
-			os.Remove(lockPath)
-			return run(dir, port, noBrowser)
+			if e = os.Remove(lockPath); e != nil {
+				return fmt.Errorf("не удалось удалить старую блокировку: %w", e)
+			}
+			f, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0600)
 		}
-		return errors.New("приложение запускается. Подождите несколько секунд и запустите снова")
+		if err != nil {
+			return errors.New("приложение запускается или рабочая папка заблокирована; повторите запуск")
+		}
 	}
+
 	f.Close()
 	defer os.Remove(lockPath)
 	store, err := openStore(dir)
@@ -216,7 +221,7 @@ func atomicWrite(path string, data []byte) error {
 	return os.Rename(tmp, path)
 }
 
-func validateState(raw json.RawMessage) error {
+func validateStateShape(raw json.RawMessage) error {
 	var data map[string]json.RawMessage
 	if json.Unmarshal(raw, &data) != nil {
 		return errors.New("неверный JSON")
@@ -339,38 +344,25 @@ func (a *App) state(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var next Envelope
-	if json.Unmarshal(raw, &next) != nil || validateState(next.State) != nil {
+	if json.Unmarshal(raw, &next) != nil {
 		writeJSON(w, 400, map[string]string{"error": "Неверная структура расписания"})
+		return
+	}
+	if err := validateState(next.State); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "Данные не сохранены: " + err.Error()})
 		return
 	}
 	if next.Revision != a.store.data.Revision {
 		writeJSON(w, 409, map[string]string{"error": "База изменена в другой вкладке. Сохраните резервную копию и перезагрузите окно."})
 		return
 	}
-	backupDir := filepath.Join(a.store.dir, "backups")
-	if err := os.MkdirAll(backupDir, 0700); err != nil {
-		writeJSON(w, 500, map[string]string{"error": err.Error()})
-		return
-	}
-	previous, _ := json.Marshal(a.store.data)
-	backupPath := filepath.Join(backupDir, fmt.Sprintf("revision-%09d.json", a.store.data.Revision))
-	if err := atomicWrite(backupPath, previous); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "Не удалось создать резервную копию: " + err.Error()})
-		return
-	}
+	next.Project = a.store.data.Project // Client payloads cannot change document ownership.
 	next.Revision++
 	next.Updated = time.Now().UTC().Format(time.RFC3339)
-	out, _ := json.Marshal(next)
-	if err := atomicWrite(filepath.Join(a.store.dir, "workspace.json"), out); err != nil {
-		writeJSON(w, 500, map[string]string{"error": "Не удалось сохранить на диск: " + err.Error()})
+	if err := a.store.writeLocked(next); err != nil {
+		writeJSON(w, 500, map[string]string{"error": "Не удалось сохранить: " + err.Error()})
 		return
 	}
-	a.store.data = next
-	entries, _ := filepath.Glob(filepath.Join(backupDir, "revision-*.json"))
-	sort.Strings(entries)
-	for len(entries) > 20 {
-		os.Remove(entries[0])
-		entries = entries[1:]
-	}
+
 	writeJSON(w, 200, map[string]any{"revision": next.Revision, "updated": next.Updated})
 }

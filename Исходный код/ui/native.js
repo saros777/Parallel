@@ -1,6 +1,10 @@
 /* Native Wails window: OS save dialogs and safe close, no browser or HTTP server. */
 if(window.DESKTOP?.native){
- const native=window.go.main.DesktopBridge;
+ const native=window.go?.main?.DesktopBridge;
+ if(!native||!window.runtime?.EventsOn){
+  const shell=document.querySelector('.app-shell');if(shell)shell.inert=true;
+  const alert=document.createElement('p');alert.setAttribute('role','alert');alert.textContent='Не удалось подключить настольный интерфейс. Закройте окно и запустите программу снова. Данные на диске не изменены.';document.body.append(alert);
+ }else{
  window.addEventListener?.('error',e=>native.LogFrontendError?.(String(e.error?.stack||e.message)));
  window.addEventListener?.('unhandledrejection',e=>native.LogFrontendError?.(String(e.reason?.stack||e.reason)));
  download=async function(name,data,type='application/json'){
@@ -25,10 +29,13 @@ if(window.DESKTOP?.native){
  };
  window.runtime.EventsOn('parallel:close-request',window.parallelClose);
  document.documentElement.classList.add('native-window');
- document.addEventListener('parallel:workspace-ready',()=>{
+ document.addEventListener('parallel:workspace-ready',async()=>{
+  if(await window.parallelProjectReady===false)return;
   let signalled=false;const signal=kind=>{if(signalled)return;signalled=true;native.Ready(JSON.stringify({...window.parallelStartup,signalMs:performance.now(),renderSignal:kind,visibility:document.visibilityState}))};
   requestAnimationFrame(()=>requestAnimationFrame(()=>signal('animation-frame')));
   // A minimised or occluded WebView may suspend animation frames entirely.
   setTimeout(()=>signal('background-timer'),500);
  },{once:true});
+}
+
 }

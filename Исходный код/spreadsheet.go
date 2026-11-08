@@ -216,6 +216,9 @@ func writeSpreadsheet(book SpreadsheetBook, format string) ([]byte, error) {
 	return out.Bytes(), nil
 }
 func (b *DesktopBridge) ReadSpreadsheet() (WireData, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return WireData{}, err
+	}
 	if b.openFile == nil {
 		return WireData{}, errors.New("диалог открытия недоступен")
 	}
@@ -243,6 +246,9 @@ func (b *DesktopBridge) ReadSpreadsheet() (WireData, error) {
 	return packWire(data), nil
 }
 func (b *DesktopBridge) WriteSpreadsheet(raw, format string) (bool, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return false, err
+	}
 	if len(raw) > maxProjectBytes {
 		return false, errors.New("слишком большой экспорт")
 	}

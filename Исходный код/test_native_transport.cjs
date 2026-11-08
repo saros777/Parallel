@@ -9,7 +9,7 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
  const response=await context.window.fetch('/api/state',{method:'PUT',body:'{}'});assert.equal(response.status,409);assert.equal((await response.json()).error,'stale');assert.deepEqual(calls[0],{path:'/api/state',method:'PUT',body:'{}'});
  assert.equal(await (await context.window.fetch('/engine.js')).text(),'asset');
  vm.runInContext(fs.readFileSync('ui/native.js','utf8'),context);
- events.get('parallel:workspace-ready')();assert.equal(readyCalls.length,0);timers.shift()();assert.equal(readyCalls[0].renderSignal,'background-timer');frames.shift()();frames.shift()();assert.equal(readyCalls.length,1,'ready must be reported once when frames resume');
+ await events.get('parallel:workspace-ready')();assert.equal(readyCalls.length,0);timers.shift()();assert.equal(readyCalls[0].renderSignal,'background-timer');frames.shift()();frames.shift()();assert.equal(readyCalls.length,1,'ready must be reported once when frames resume');
  await context.download('backup.json','saved data');assert(messages.includes('Файл сохранён.'));
  calls.length=0;await events.get('parallel:close-request')();assert(!context.dirty);assert.equal(calls.at(-1).path,'/api/shutdown');
  calls.length=0;context.dirty=true;context.saveError='disk full';context.persist=async()=>{};await events.get('parallel:close-request')();assert.equal(calls.length,0,'native window must not close after failed save');

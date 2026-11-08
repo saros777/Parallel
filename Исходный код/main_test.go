@@ -28,7 +28,7 @@ func TestOldVersionCannotSilentlyReopen(t *testing.T) {
 	}
 }
 
-const emptyState = `{"classes":[],"teachers":[],"subjects":[],"rooms":[],"lessons":[]}`
+const emptyState = `{"meta":{"schemaVersion":"1.0"},"classes":[],"teachers":[],"subjects":[],"rooms":[],"lessons":[]}`
 
 func TestSeedAndReopen(t *testing.T) {
 	dir := t.TempDir()

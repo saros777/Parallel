@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
-  <Package Name="Параллель 5.3" Manufacturer="Параллель" Version="5.3.0" Language="1049"
+  <Package Name="Параллель 5.4" Manufacturer="Параллель" Version="5.4.0" Language="1049"
            UpgradeCode="D4173FA9-78AA-4AD3-90DC-56F168DC94D5" Scope="perUser" InstallerVersion="500" Codepage="1251">
     <SummaryInformation Description="Расписание школы — самостоятельное приложение Windows" />
     <MajorUpgrade DowngradeErrorMessage="Уже установлена более новая версия Параллель." />
@@ -22,11 +22,11 @@
                 <Verb Id="open" Command="Открыть" TargetFile="ParallelExe" Argument="&quot;%1&quot;" />
               </Extension>
             </ProgId>
-            <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="Application" Value="5.3.0" Type="string" KeyPath="yes" />
+            <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="Application" Value="5.4.0" Type="string" KeyPath="yes" />
           </Component>
           <Component Id="MicrosoftRuntimeSetup" Guid="55DF31DB-9B13-412A-9485-FBA154A3473B">
             <File Id="MicrosoftRuntimeExe" Source="$(var.DistDir)\MicrosoftEdgeWebview2Setup.exe" />
-            <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="RuntimeSetup" Value="5.3.0" Type="string" KeyPath="yes" />
+            <RegistryValue Root="HKCU" Key="Software\ParallelSchool\Installer" Name="RuntimeSetup" Value="5.4.0" Type="string" KeyPath="yes" />
           </Component>
         </Directory>
       </Directory>

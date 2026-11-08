@@ -29,7 +29,7 @@
     new D.Table({width:{size:width,type:D.WidthType.DXA},columnWidths:widths,layout:D.TableLayoutType.FIXED,borders:{top:border,bottom:border,left:border,right:border,insideHorizontal:border,insideVertical:border},margins:{top:20,bottom:20,left:35,right:35},rows:[head,...data]})
    ]};
   });
-  return new D.Document({creator:'Параллель 4.0',title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
+  return new D.Document({creator:'Параллель '+(window.DESKTOP?.version||'5.4'),title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
  }
  root.WordExport={build};
  if(typeof module!=='undefined')module.exports=root.WordExport;

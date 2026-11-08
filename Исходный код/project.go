@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"time"
 	"unicode"
@@ -41,6 +42,7 @@ type ProjectSelection struct {
 type pendingProject struct {
 	token, path string
 	state       json.RawMessage
+	revision    int
 }
 
 // .parallel is an ordinary ZIP container with a versioned manifest and JSON.
@@ -129,54 +131,7 @@ func decodeProject(raw []byte) (json.RawMessage, error) {
 	}
 	return json.Marshal(json.RawMessage(compact.Bytes()))
 }
-func validateProjectState(raw json.RawMessage) error {
-	if len(raw) > maxProjectBytes {
-		return errors.New("расписание больше 64 МБ")
-	}
-	if err := validateState(raw); err != nil {
-		return err
-	}
-	var data struct {
-		Meta struct {
-			Schema string `json:"schemaVersion"`
-		} `json:"meta"`
-		Classes, Teachers, Subjects, Rooms []struct {
-			ID string `json:"id"`
-		}
-		Lessons []struct {
-			ID, ClassID, SubjectID, Date string
-			Slot                         int
-		}
-	}
-	if err := json.Unmarshal(raw, &data); err != nil {
-		return errors.New("неверная структура расписания")
-	}
-	if data.Meta.Schema != "1.0" {
-		return errors.New("неподдерживаемая схема расписания")
-	}
-	sets := []map[string]bool{}
-	for _, rows := range [][]struct {
-		ID string `json:"id"`
-	}{data.Classes, data.Teachers, data.Subjects, data.Rooms} {
-		ids := map[string]bool{}
-		for _, r := range rows {
-			if r.ID == "" || ids[r.ID] {
-				return errors.New("пустой или повторяющийся идентификатор в справочнике")
-			}
-			ids[r.ID] = true
-		}
-		sets = append(sets, ids)
-	}
-	ids := map[string]bool{}
-	for _, l := range data.Lessons {
-		_, dateErr := time.Parse("2006-01-02", l.Date)
-		if l.ID == "" || ids[l.ID] || !sets[0][l.ClassID] || !sets[2][l.SubjectID] || dateErr != nil || l.Slot < 1 || l.Slot > 20 {
-			return fmt.Errorf("некорректный урок %s", l.ID)
-		}
-		ids[l.ID] = true
-	}
-	return nil
-}
+func validateProjectState(raw json.RawMessage) error { return validateState(raw) }
 func readProjectPath(path string) (json.RawMessage, error) {
 	f, err := os.Open(path)
 	if err != nil {
@@ -224,42 +179,93 @@ func projectHTTP(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, map[string]string{"data": base64.StdEncoding.EncodeToString(raw)})
 	}
 }
-func (b *DesktopBridge) saveProjectSession() error {
-	raw, err := json.Marshal(b.projectSession)
-	if err != nil {
+
+// Recovery state and its ownership are persisted in the same atomic envelope.
+func (b *DesktopBridge) commitDocument(state json.RawMessage, session projectSession, expected int, replace, clean bool) error {
+	b.store.mu.Lock()
+	defer b.store.mu.Unlock()
+	if b.store.data.Revision != expected {
+		return errStaleProject
+	}
+	next := b.store.data
+	if replace {
+		if err := validateState(state); err != nil {
+			return err
+		}
+		next.State = state
+		next.Revision++
+		next.Updated = time.Now().UTC().Format(time.RFC3339)
+	}
+	if clean {
+		session.SavedRevision = next.Revision
+	}
+	session.Recent = append([]string{}, session.Recent...)
+	next.Project = &session
+	if err := b.store.writeLocked(next); err != nil {
 		return err
 	}
-	return atomicWrite(filepath.Join(b.dir, "project-session.json"), raw)
+	b.projectSession = session
+	return nil
+}
+func semanticStateEqual(a, b json.RawMessage) bool {
+	decode := func(raw json.RawMessage) any {
+		d := json.NewDecoder(bytes.NewReader(raw))
+		d.UseNumber()
+		var value any
+		_ = d.Decode(&value)
+		return value
+	}
+	return reflect.DeepEqual(decode(a), decode(b))
 }
 func (b *DesktopBridge) restoreProject() error {
-	b.projectSession.SavedRevision = -1
-	raw, err := os.ReadFile(filepath.Join(b.dir, "project-session.json"))
-	if os.IsNotExist(err) {
-		return nil
+	snapshot := b.store.data
+	session := projectSession{SavedRevision: -1}
+	migrated := snapshot.Project == nil
+	if snapshot.Project != nil {
+		session = *snapshot.Project
+	} else {
+		raw, err := os.ReadFile(filepath.Join(b.dir, "project-session.json"))
+		if err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		if len(raw) > 0 && json.Unmarshal(raw, &session) != nil {
+			session = projectSession{SavedRevision: -1}
+		}
 	}
-	if err != nil {
-		return err
+	if session.Path != "" {
+		session.Path = cleanProjectPath(session.Path)
 	}
-	if json.Unmarshal(raw, &b.projectSession) != nil {
-		b.projectSession = projectSession{SavedRevision: -1}
-		return nil
-	}
-	// A newer recovery revision wins over the last explicitly saved document.
-	if b.projectSession.Path != "" && b.projectSession.SavedRevision == b.store.data.Revision {
-		state, err := readProjectPath(b.projectSession.Path)
+	b.projectSession = session
+	if session.Path != "" && session.SavedRevision == snapshot.Revision {
+		state, err := readProjectPath(session.Path)
 		if err != nil {
-			b.projectSession.SavedRevision = -1
-			return nil
+			session.SavedRevision = -1
+			migrated = true
+		} else if !semanticStateEqual(state, snapshot.State) {
+			return b.commitDocument(state, session, snapshot.Revision, true, true)
 		}
-		if err == nil && !bytes.Equal(state, b.store.data.State) {
-			if err = b.replaceProjectState(state); err != nil {
-				return err
-			}
-			b.projectSession.SavedRevision = b.store.data.Revision
-			return b.saveProjectSession()
-		}
+	}
+	if migrated {
+		return b.commitDocument(nil, session, snapshot.Revision, false, false)
 	}
 	return nil
+}
+func cleanProjectPath(path string) string {
+	if absolute, err := filepath.Abs(path); err == nil {
+		return filepath.Clean(absolute)
+	}
+	return filepath.Clean(path)
+}
+func rememberProject(session *projectSession, path string) {
+	path = cleanProjectPath(path)
+	recent := []string{path}
+	for _, p := range session.Recent {
+		p = cleanProjectPath(p)
+		if !strings.EqualFold(p, path) && len(recent) < 8 {
+			recent = append(recent, p)
+		}
+	}
+	session.Recent = recent
 }
 func (b *DesktopBridge) projectInfoLocked() ProjectInfo {
 	b.store.mu.Lock()
@@ -276,26 +282,26 @@ func (b *DesktopBridge) ProjectInfo() ProjectInfo {
 	defer b.projectMu.Unlock()
 	return b.projectInfoLocked()
 }
-func (b *DesktopBridge) PendingProject() ProjectSelection {
-	<-b.initialised
+func (b *DesktopBridge) queueProject(path string) {
 	b.projectMu.Lock()
 	defer b.projectMu.Unlock()
-	if b.pendingProject == nil {
-		return ProjectSelection{}
-	}
-	p := b.pendingProject
-	return ProjectSelection{Token: p.token, Path: p.path, Content: packWire(p.state)}
+	b.pendingRequests = append(b.pendingRequests, cleanProjectPath(path))
 }
-func (b *DesktopBridge) rememberProject(path string) {
-	recent := []string{path}
-	for _, p := range b.projectSession.Recent {
-		if !strings.EqualFold(p, path) && len(recent) < 8 {
-			recent = append(recent, p)
-		}
+func (b *DesktopBridge) PendingProject() (ProjectSelection, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return ProjectSelection{}, err
 	}
-	b.projectSession.Recent = recent
+	b.projectMu.Lock()
+	defer b.projectMu.Unlock()
+	if len(b.pendingRequests) == 0 {
+		return ProjectSelection{}, nil
+	}
+	path := b.pendingRequests[0]
+	b.pendingRequests = b.pendingRequests[1:]
+	return b.stageProject(path)
 }
 func (b *DesktopBridge) stageProject(path string) (ProjectSelection, error) {
+	path = cleanProjectPath(path)
 	state, err := readProjectPath(path)
 	if err != nil {
 		return ProjectSelection{}, err
@@ -305,10 +311,16 @@ func (b *DesktopBridge) stageProject(path string) (ProjectSelection, error) {
 		return ProjectSelection{}, err
 	}
 	id := hex.EncodeToString(token[:])
-	b.pendingProject = &pendingProject{id, path, state}
+	b.store.mu.Lock()
+	revision := b.store.data.Revision
+	b.store.mu.Unlock()
+	b.pendingProject = &pendingProject{token: id, path: path, state: state, revision: revision}
 	return ProjectSelection{Token: id, Path: path, Content: packWire(state)}, nil
 }
 func (b *DesktopBridge) ReadProject() (ProjectSelection, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return ProjectSelection{}, err
+	}
 	b.projectMu.Lock()
 	defer b.projectMu.Unlock()
 	if b.openFile == nil {
@@ -321,6 +333,9 @@ func (b *DesktopBridge) ReadProject() (ProjectSelection, error) {
 	return b.stageProject(path)
 }
 func (b *DesktopBridge) ReadRecentProject(index int) (ProjectSelection, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return ProjectSelection{}, err
+	}
 	b.projectMu.Lock()
 	defer b.projectMu.Unlock()
 	if index < 0 || index >= len(b.projectSession.Recent) {
@@ -343,45 +358,52 @@ func (b *DesktopBridge) replaceProjectState(state json.RawMessage) error {
 	return nil
 }
 func (b *DesktopBridge) ActivateProject(token string) (ProjectInfo, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return ProjectInfo{}, err
+	}
 	b.projectMu.Lock()
 	defer b.projectMu.Unlock()
 	p := b.pendingProject
 	if p == nil || p.token != token {
 		return ProjectInfo{}, errors.New("выбор файла устарел")
 	}
-	if err := b.replaceProjectState(p.state); err != nil {
+	session := b.projectSession
+	session.Path = p.path
+	rememberProject(&session, p.path)
+	if err := b.commitDocument(p.state, session, p.revision, true, true); err != nil {
 		return ProjectInfo{}, err
 	}
-	b.projectSession.Path = p.path
-	b.store.mu.Lock()
-	b.projectSession.SavedRevision = b.store.data.Revision
-	b.store.mu.Unlock()
-	b.rememberProject(p.path)
 	b.pendingProject = nil
-	if err := b.saveProjectSession(); err != nil {
-		return ProjectInfo{}, err
-	}
+
 	return b.projectInfoLocked(), nil
 }
 func (b *DesktopBridge) NewProject(raw string) (ProjectInfo, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return ProjectInfo{}, err
+	}
 	state := json.RawMessage(raw)
 	if err := validateProjectState(state); err != nil {
 		return ProjectInfo{}, err
 	}
 	b.projectMu.Lock()
 	defer b.projectMu.Unlock()
-	if err := b.replaceProjectState(state); err != nil {
+	session := b.projectSession
+	session.Path = ""
+	session.SavedRevision = -1
+	b.store.mu.Lock()
+	revision := b.store.data.Revision
+	b.store.mu.Unlock()
+	if err := b.commitDocument(state, session, revision, true, false); err != nil {
 		return ProjectInfo{}, err
 	}
-	b.projectSession.Path = ""
-	b.projectSession.SavedRevision = -1
 	b.pendingProject = nil
-	if err := b.saveProjectSession(); err != nil {
-		return ProjectInfo{}, err
-	}
+
 	return b.projectInfoLocked(), nil
 }
 func (b *DesktopBridge) SaveProject(saveAs bool) (ProjectInfo, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return ProjectInfo{}, err
+	}
 	b.projectMu.Lock()
 	defer b.projectMu.Unlock()
 	path := b.projectSession.Path
@@ -443,11 +465,17 @@ func (b *DesktopBridge) SaveProject(saveAs bool) (ProjectInfo, error) {
 	if err = atomicWrite(path, raw); err != nil {
 		return ProjectInfo{}, err
 	}
-	b.projectSession.Path = path
-	b.projectSession.SavedRevision = snapshot.Revision
-	b.rememberProject(path)
-	if err = b.saveProjectSession(); err != nil {
-		return ProjectInfo{}, err
+	session := b.projectSession
+	session.Path = cleanProjectPath(path)
+	session.SavedRevision = snapshot.Revision
+	rememberProject(&session, path)
+	// A simultaneous autosave remains dirty; it is never marked as saved by an older snapshot.
+	b.store.mu.Lock()
+	current := b.store.data.Revision
+	b.store.mu.Unlock()
+	if err := b.commitDocument(nil, session, current, false, false); err != nil {
+		return ProjectInfo{}, fmt.Errorf("файл записан, но не удалось записать состояние восстановления: %w", err)
 	}
+
 	return b.projectInfoLocked(), nil
 }

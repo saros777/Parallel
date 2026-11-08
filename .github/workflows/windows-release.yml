@@ -2,7 +2,7 @@ name: Windows MSI release
 on:
   workflow_dispatch:
   push:
-    branches: [codex/parallel-5.3-desktop]
+    branches: [codex/parallel-5.4-desktop]
     paths:
       - '.github/workflows/windows-release.yml'
       - 'Исходный код/**'
@@ -63,6 +63,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Module integrity verification failed' }
             go test -mod=vendor ./...
             if ($LASTEXITCODE -ne 0) { throw 'Go tests failed' }
+            go test -race -mod=vendor ./...
+            if ($LASTEXITCODE -ne 0) { throw 'Go race tests failed' }
             go vet -mod=vendor ./...
             if ($LASTEXITCODE -ne 0) { throw 'Go vet failed' }
             foreach ($file in Get-ChildItem test_*.cjs) {
@@ -109,39 +111,40 @@ jobs:
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
-          $output = Join-Path $PWD 'releases/5.3'
+          $output = Join-Path $PWD 'releases/5.4'
           New-Item -ItemType Directory -Force $output | Out-Null
-          Copy-Item 'Исходный код/dist/Parallel-5.3-x64.msi' $output
-          Copy-Item 'Исходный код/dist/Parallel-5.3-School.parallel' $output
-          Copy-Item 'Исходный код/dist/Parallel-5.3-Verification.json' $output
-          git archive --format=zip --output="$output/Parallel-5.3-Source.zip" HEAD 'Исходный код' '.github' '.gitattributes' 'releases/README.md' 'releases/SECURITY_REVIEW_5.1.md'
+          Copy-Item 'Исходный код/dist/Parallel-5.4-x64.msi' $output
+          Copy-Item 'Исходный код/dist/Parallel-5.4-App.zip' $output
+          Copy-Item 'Исходный код/dist/Parallel-5.4-School.parallel' $output
+          Copy-Item 'Исходный код/dist/Parallel-5.4-Verification.json' $output
+          git archive --format=zip --output="$output/Parallel-5.4-Source.zip" HEAD 'Исходный код' '.github' '.gitattributes' 'releases/README.md' 'releases/SECURITY_REVIEW_5.1.md'
           if ($LASTEXITCODE -ne 0) { throw 'Source archive creation failed' }
           $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
-          & $scanner -Scan -ScanType 3 -File "$output/Parallel-5.3-Source.zip"
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$output/Parallel-5.3-Source.zip")) { throw 'Defender rejected source archive; publication blocked' }
+          & $scanner -Scan -ScanType 3 -File "$output/Parallel-5.4-Source.zip"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$output/Parallel-5.4-Source.zip")) { throw 'Defender rejected source archive; publication blocked' }
           $findings = @(Get-MpThreat -ErrorAction Stop)
           if ($findings.Count) { throw 'Defender recorded a detection; publication blocked' }
-          $reportPath = "$output/Parallel-5.3-Verification.json"
+          $reportPath = "$output/Parallel-5.4-Verification.json"
           $report = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json -AsHashtable
           $report.checks.sourceArchiveDefenderScan = 'passed'
           $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM
-          Get-ChildItem $output -File | Where-Object Name -ne 'Parallel-5.3-SHA256.txt' | Sort-Object Name | ForEach-Object {
+          Get-ChildItem $output -File | Where-Object Name -ne 'Parallel-5.4-SHA256.txt' | Sort-Object Name | ForEach-Object {
             "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
-          } | Set-Content -LiteralPath "$output/Parallel-5.3-SHA256.txt" -Encoding utf8NoBOM
+          } | Set-Content -LiteralPath "$output/Parallel-5.4-SHA256.txt" -Encoding utf8NoBOM
           git config user.name 'Parallel build verification'
           git config user.email 'build-verification@users.noreply.github.com'
-          git add releases/5.3
-          git commit -m 'Publish Windows-tested MSI 5.3, matching source and verification report'
+          git add releases/5.4
+          git commit -m 'Publish Windows-tested MSI 5.4, matching source and verification report'
           if ($LASTEXITCODE -ne 0) { throw 'Verified output commit failed' }
-          git ls-remote --exit-code --heads origin refs/heads/codex/parallel-5.3-files | Out-Null
+          git ls-remote --exit-code --heads origin refs/heads/codex/parallel-5.4-files | Out-Null
           if ($LASTEXITCODE -eq 0) {
-            git fetch origin refs/heads/codex/parallel-5.3-files
+            git fetch origin refs/heads/codex/parallel-5.4-files
             if ($LASTEXITCODE -ne 0) { throw 'Could not read previous verified release history' }
             # Keep this run's verified snapshot while retaining prior publication ancestry.
             git merge --strategy=ours --no-edit FETCH_HEAD
             if ($LASTEXITCODE -ne 0) { throw 'Could not preserve release history' }
           } elseif ($LASTEXITCODE -ne 2) { throw 'Could not check verified file branch' }
-          $pushOutput = git push origin HEAD:refs/heads/codex/parallel-5.3-files 2>&1
+          $pushOutput = git push origin HEAD:refs/heads/codex/parallel-5.4-files 2>&1
           $pushExit = $LASTEXITCODE
           $pushOutput | ForEach-Object { Write-Output $_ }
           if ($pushExit -ne 0) {

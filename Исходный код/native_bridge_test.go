@@ -27,8 +27,8 @@ func TestDesktopBridgePreservesBaseAndExceptions(t *testing.T) {
 	}
 	var state map[string]any
 	json.Unmarshal(data.State, &state)
-	state["baseSchedule"] = map[string]any{"week": "2026-09-07", "lessons": []any{map[string]any{"id": "custom-template", "slot": 6}}}
-	state["overrides"] = map[string]any{"weekly-exception": map[string]any{"slot": 3}}
+	state["baseSchedule"] = map[string]any{"week": "2026-09-07", "lessons": []any{map[string]any{"id": "custom-template", "slot": 6, "date": "2026-09-07", "classId": state["classes"].([]any)[0].(map[string]any)["id"], "subjectId": state["subjects"].([]any)[0].(map[string]any)["id"]}}}
+	state["overrides"] = map[string]any{"custom-template@2026-09-14": map[string]any{"slot": 3, "date": "2026-09-14"}}
 	data.State, _ = json.Marshal(state)
 	payload, _ := json.Marshal(data)
 	saved := bridge.Request("/api/state", "PUT", string(payload))
@@ -43,7 +43,7 @@ func TestDesktopBridgePreservesBaseAndExceptions(t *testing.T) {
 		t.Fatal(err)
 	}
 	actual := reopened.Request("/api/state", "GET", "")
-	if !strings.Contains(actual.Body, "custom-template") || !strings.Contains(actual.Body, "weekly-exception") {
+	if !strings.Contains(actual.Body, "custom-template") || !strings.Contains(actual.Body, "custom-template@2026-09-14") {
 		t.Fatal("Native mode lost base or weekly exception")
 	}
 	if _, err := os.Stat(filepath.Join(dir, "session.json")); !os.IsNotExist(err) {

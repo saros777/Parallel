@@ -102,14 +102,14 @@ func runDesktop(dir string, initialPaths ...string) error {
 		Title: "Параллель · Расписание школы", Width: 1440, Height: 900, MinWidth: 1024, MinHeight: 640,
 		WindowStartState: options.Maximised, BackgroundColour: options.NewRGB(244, 246, 249),
 		EnableFraudulentWebsiteDetection: true,
-		AssetServer:                      &assetserver.Options{Assets: desktopAssets{assets}}, Bind: []interface{}{bridge},
+		AssetServer:                      &assetserver.Options{Assets: desktopAssets{assets}, Middleware: documentHeaders}, Bind: []interface{}{bridge},
 		OnStartup: func(c context.Context) {
 			ctx = c
 			// Wails has acquired its single-instance lock before this callback.
 			// A forwarded second launch must never restore over the active recovery.
 			bridge.initialiseErr = bridge.restoreProject()
 			if bridge.initialiseErr == nil && len(initialPaths) > 0 && initialPaths[0] != "" {
-				_, bridge.initialiseErr = bridge.stageProject(initialPaths[0])
+				bridge.queueProject(initialPaths[0])
 			}
 			close(bridge.initialised)
 			if bridge.initialiseErr != nil {
@@ -127,6 +127,9 @@ func runDesktop(dir string, initialPaths ...string) error {
 		},
 		SingleInstanceLock: &options.SingleInstanceLock{UniqueId: appID, OnSecondInstanceLaunch: func(data options.SecondInstanceData) {
 			<-bridge.initialised
+			if bridge.initialiseErr != nil {
+				return
+			}
 			if ctx != nil {
 				wruntime.WindowUnminimise(ctx)
 				wruntime.WindowShow(ctx)
@@ -136,14 +139,11 @@ func runDesktop(dir string, initialPaths ...string) error {
 						if !filepath.IsAbs(path) {
 							path = filepath.Join(data.WorkingDirectory, path)
 						}
-						bridge.projectMu.Lock()
-						selection, err := bridge.stageProject(path)
-						bridge.projectMu.Unlock()
-						if err == nil {
-							wruntime.EventsEmit(ctx, "parallel:project-request", selection)
-						} else {
-							wruntime.MessageDialog(ctx, wruntime.MessageDialogOptions{Type: wruntime.ErrorDialog, Title: "Не удалось открыть расписание", Message: err.Error()})
+						bridge.queueProject(path)
+						if bridge.initialiseErr == nil {
+							wruntime.EventsEmit(ctx, "parallel:project-request")
 						}
+
 						break
 					}
 				}

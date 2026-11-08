@@ -21,25 +21,26 @@ import (
 // DesktopBridge reuses the validated store handlers via in-process IPC.
 // Native mode never listens on a TCP port and never launches a browser.
 type DesktopBridge struct {
-	ready          atomic.Bool
-	initialised    chan struct{}
-	initialiseErr  error
-	stateJSONBytes atomic.Int64
-	stateWireBytes atomic.Int64
-	stateReadMS    atomic.Int64
-	statePackMS    atomic.Int64
-	store          *Store
-	projectMu      sync.Mutex
-	projectSession projectSession
-	pendingProject *pendingProject
-	openFile       func(string) (string, error)
-	savePath       func(string, string) (string, error)
-	handler        http.Handler
-	token          string
-	origin         string
-	dir            string
-	quit           func()
-	saveFile       func(string, []byte) (bool, error)
+	ready           atomic.Bool
+	initialised     chan struct{}
+	initialiseErr   error
+	stateJSONBytes  atomic.Int64
+	stateWireBytes  atomic.Int64
+	stateReadMS     atomic.Int64
+	statePackMS     atomic.Int64
+	store           *Store
+	projectMu       sync.Mutex
+	projectSession  projectSession
+	pendingProject  *pendingProject
+	pendingRequests []string
+	openFile        func(string) (string, error)
+	savePath        func(string, string) (string, error)
+	handler         http.Handler
+	token           string
+	origin          string
+	dir             string
+	quit            func()
+	saveFile        func(string, []byte) (bool, error)
 }
 type BridgeResponse struct {
 	Status int    `json:"status"`
@@ -68,6 +69,9 @@ func newDesktopBridge(dir string, deferRestore ...bool) (*DesktopBridge, error) 
 	return b, nil
 }
 func (b *DesktopBridge) Ready(timings string) {
+	if err := b.awaitInitialised(); err != nil {
+		return
+	}
 	if b.ready.Swap(true) {
 		return
 	}
@@ -76,7 +80,9 @@ func (b *DesktopBridge) Ready(timings string) {
 	b.store.mu.Unlock()
 	var frontend map[string]any
 	if len(timings) <= 8192 {
-		_ = json.Unmarshal([]byte(timings), &frontend)
+		if err := json.Unmarshal([]byte(timings), &frontend); err != nil {
+			log.Printf("Startup timings unavailable: %v", err)
+		}
 	}
 	raw, _ := json.Marshal(map[string]any{"version": version, "readyUtc": time.Now().UTC().Format(time.RFC3339Nano), "elapsedMs": time.Since(appStarted).Milliseconds(), "revision": revision, "stateJSONBytes": b.stateJSONBytes.Load(), "stateIPCBytes": b.stateWireBytes.Load(), "stateReadMs": b.stateReadMS.Load(), "statePackMs": b.statePackMS.Load(), "frontend": frontend})
 	_ = atomicWrite(filepath.Join(b.dir, "startup-timing.json"), raw)
@@ -84,9 +90,9 @@ func (b *DesktopBridge) Ready(timings string) {
 func (b *DesktopBridge) LogFrontendError(message string) {
 	log.Printf("Frontend error: %.4096s", message)
 }
+func (b *DesktopBridge) awaitInitialised() error { <-b.initialised; return b.initialiseErr }
 func (b *DesktopBridge) Request(path, method, body string) BridgeResponse {
-	<-b.initialised
-	if b.initialiseErr != nil {
+	if b.awaitInitialised() != nil {
 		return BridgeResponse{500, `{"error":"Не удалось восстановить рабочую копию"}`}
 	}
 	return b.requestInternal(path, method, body)
@@ -116,6 +122,9 @@ func (b *DesktopBridge) requestInternal(path, method, body string) BridgeRespons
 	return BridgeResponse{out.Code, out.Body.String()}
 }
 func (b *DesktopBridge) SaveFile(name, data string) (bool, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return false, err
+	}
 	if b.saveFile == nil {
 		return false, errors.New("диалог сохранения недоступен")
 	}

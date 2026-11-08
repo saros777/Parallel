@@ -1,13 +1,13 @@
 /* Ordinary desktop document commands and reviewed, separate table imports. */
 const PM=ProjectModel;
-let projectInfo=null,projectModified=false,projectBusy=false,projectMenu=null;
-const projectNative=()=>window.DESKTOP?.native?window.go.main.DesktopBridge:null;
+let projectInfo=null,projectModified=false,projectBusy=false,projectMenu=null,projectSerial=0,projectInitialised=false,projectPendingSignal=false;
+const projectNative=()=>window.DESKTOP?.native?window.go?.main?.DesktopBridge||null:null;
 function projectTitle(){
  const name=projectInfo?.name||'Без названия.parallel';
  $('#project-name').textContent=(projectModified?'● ':'')+name;$('#project-name').title=projectInfo?.path||'Новое расписание — выберите файл при сохранении';
  document.title=(projectModified?'* ':'')+name+' — Параллель';window.runtime?.WindowSetTitle?.(document.title);
 }
-window.parallelProjectChanged=()=>{if(!loading){projectModified=true;projectTitle()}};
+window.parallelProjectChanged=()=>{if(!loading){projectModified=true;projectSerial++;projectTitle()}};
 function projectSetInfo(info){projectInfo=info;if(projectInfo&&!projectInfo.path&&db?.meta?.projectName)projectInfo.name=db.meta.projectName+'.parallel';projectModified=!!info?.modified;projectTitle();if(!loading)renderStatus()}
 const projectStatusBefore=renderStatus;
 renderStatus=function(){projectStatusBefore();if(connected&&!loading&&!saving&&!dirty&&!saveError)$('#save-state').textContent=projectModified?'Автокопия · '+lastSaved:'Файл сохранён'};
@@ -32,14 +32,50 @@ async function projectFlush(){
  if(saving||dirty||saveError)throw Error('Рабочая копия ещё не сохранена. '+saveError);
  clearTimeout(saveTimer);saveAgain=false;
 }
-async function projectSave(saveAs=false){
- if(projectBusy)return false;projectBusy=true;
+
+let projectReadyResolve;
+window.parallelProjectReady=new Promise(resolve=>projectReadyResolve=resolve);
+function projectLock(value){projectBusy=value;const shell=$('.app-shell');if(shell)shell.inert=value;if(!value)setTimeout(projectPumpRequests,0)}
+async function projectTask(action){
+ if(projectBusy)return false;
+ if(loading||!connected||!projectInitialised){message('Дождитесь открытия рабочей копии.');return false}
+ projectCloseMenu();studioCancel();projectLock(true);
+ try{return await action()}finally{projectLock(false)}
+}
+function projectDialogClosed(build){return new Promise(resolve=>{
+ const element=$('#dialog');build();
+ const closed=()=>{if(!element.open){element.removeEventListener('close',closed);resolve()}};
+ element.addEventListener('close',closed);
+})}
+async function projectPumpRequests(){
+ const native=projectNative();if(!native||!projectInitialised||!projectPendingSignal||projectBusy||$('#dialog').open)return;
+ projectPendingSignal=false;
+ try{await projectTask(async()=>{
+  await projectFlush();
+  for(;;){
+   let selected;
+   try{selected=await native.PendingProject()}catch(e){message('Файл не прочитан: '+(e.message||e));continue}
+   if(!selected.token)break;
+   if(!await projectConfirm())continue;
+   try{
+    const next=normalize(JSON.parse(await ParallelWire.decode(selected.content))),info=await native.ActivateProject(selected.token);
+    projectAdopt(next,info);message('Открыто расписание: '+info.path);
+   }catch(e){message('Не удалось открыть запрошенный файл: '+(e.message||e))}
+  }
+ })}catch(e){message('Открытие приостановлено: '+(e.message||e))}
+
+}
+document.addEventListener('close',()=>setTimeout(projectPumpRequests,0),true);
+document.addEventListener('keydown',e=>{if(projectBusy&&!e.target.closest?.('#dialog')){e.preventDefault();e.stopImmediatePropagation()}},true);
+async function projectSave(saveAs=false){return projectTask(()=>projectSaveInternal(saveAs))}
+async function projectSaveInternal(saveAs=false){
  try{
-  await projectFlush();const native=projectNative();
+  await projectFlush();const serial=projectSerial,native=projectNative();
   if(native){const info=await native.SaveProject(saveAs);if(info.cancelled)return false;projectSetInfo(info);message('Расписание сохранено: '+info.path)}
   else{db.preferences=settings;const r=await fetch('/api/project/write',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({state:db})}),result=await r.json();if(!r.ok)throw Error(result.error);await download((db.meta.projectName||'Расписание')+'.parallel',ParallelWire.fromBase64(result.data),'application/x-parallel-schedule');projectModified=false;projectTitle()}
+  if(serial!==projectSerial||dirty||saving){projectModified=true;projectTitle()}
   return true;
- }catch(e){message('Не удалось сохранить расписание: '+(e.message||e));return false}finally{projectBusy=false}
+ }catch(e){message('Не удалось сохранить расписание: '+(e.message||e));return false}
 }
 function projectConfirm(){
  if(!projectModified)return Promise.resolve(true);
@@ -47,39 +83,39 @@ function projectConfirm(){
   const element=$('#dialog');let done=false;
   const onClose=()=>{if(!element.open&&!done){done=true;element.removeEventListener('close',onClose);resolve(false)}};
   const finish=value=>{if(done)return;done=true;element.removeEventListener('close',onClose);element.close();resolve(value)};
-  dialog('Сохранить изменения расписания?',`<p>Файл: <strong>${h(projectInfo?.name||'Без названия.parallel')}</strong></p><p>Сохраните изменения в отдельный файл, прежде чем продолжить.</p>`,[{text:'Сохранить',class:'primary',action:async()=>{if(await projectSave())finish(true)}},{text:'Продолжить без сохранения',action:()=>finish(true)},{text:'Отмена',action:()=>finish(false)}]);
+  dialog('Сохранить изменения расписания?',`<p>Файл: <strong>${h(projectInfo?.name||'Без названия.parallel')}</strong></p><p>Сохраните изменения в отдельный файл, прежде чем продолжить.</p>`,[{text:'Сохранить',class:'primary',action:async()=>{if(await projectSaveInternal())finish(true)}},{text:'Продолжить без сохранения',action:()=>finish(true)},{text:'Отмена',action:()=>finish(false)}]);
   $('#dialog-action-0').focus();element.addEventListener('close',onClose);
  });
 }
 window.parallelBeforeClose=async()=>{
  if(projectBusy)return false;
  if($('#dialog').open){message('Сначала сохраните или закройте текущую карточку.');return false}
- return projectConfirm();
+ return projectTask(()=>projectConfirm());
 };
 function projectAdopt(next,info){
  clearTimeout(saveTimer);studioCancel();db=next;settings={subject:true,teacher:true,room:true,group:true,abbreviate:true,labels:{},...db.preferences};revision=info?.revision??revision;selectedClasses=null;classFilter='';teacherFilter='';selectedLesson=null;route='schedule';studioPeriod='base';date=SM.anchor(db);saveError='';dirty=false;fingerprint=stateMark();projectSetInfo(info||{name:(db.meta.projectName||'Расписание')+'.parallel',modified:false});render();
 }
 async function projectOpen(index=null){
- if(projectBusy||$('#dialog').open)return;
- try{await projectFlush();if(!await projectConfirm())return;const native=projectNative();if(!native){$('#file').click();return}
-  projectBusy=true;const selected=Number.isInteger(index)?await native.ReadRecentProject(index):await native.ReadProject();if(!selected.token)return;
+ if($('#dialog').open)return;
+ return projectTask(async()=>{try{await projectFlush();if(!await projectConfirm())return;const native=projectNative();if(!native){$('#file').click();return}
+  const selected=Number.isInteger(index)?await native.ReadRecentProject(index):await native.ReadProject();if(!selected.token)return;
   const next=normalize(JSON.parse(await ParallelWire.decode(selected.content))),info=await native.ActivateProject(selected.token);projectAdopt(next,info);message('Открыто расписание: '+info.path);
- }catch(e){message('Файл не открыт; текущая работа сохранена: '+(e.message||e))}finally{projectBusy=false}
+ }catch(e){message('Файл не открыт; текущая работа сохранена: '+(e.message||e))}});
 }
 async function projectNew(){
- if(projectBusy||$('#dialog').open)return;
- try{await projectFlush();if(!await projectConfirm())return;
-  dialog('Новое расписание',`<div class="directory-form"><label>Название<input id="project-new-name" value="Новое расписание"></label><label>Учебный год<input id="project-new-year" value="${h(db.meta.academicYear||'2026-2027')}"></label><label class="checkbox-line full"><input type="checkbox" id="project-copy-directories" checked>Скопировать справочники и нагрузку; все карточки поместить в резерв</label></div><p class="hint">Новое расписание сохраняется в собственный файл. Текущее расписание не заменяется на диске.</p><p class="error" id="project-new-error"></p>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Создать',class:'primary',action:async()=>{try{
+ if($('#dialog').open)return;
+ return projectTask(async()=>{try{await projectFlush();if(!await projectConfirm())return;
+  await projectDialogClosed(()=>{let submitting=false;dialog('Новое расписание',`<div class="directory-form"><label>Название<input id="project-new-name" value="Новое расписание"></label><label>Учебный год<input id="project-new-year" value="${h(db.meta.academicYear||'2026-2027')}"></label><label class="checkbox-line full"><input type="checkbox" id="project-copy-directories" checked>Скопировать справочники и нагрузку; все карточки поместить в резерв</label></div><p class="hint">Новое расписание сохраняется в собственный файл. Текущее расписание не заменяется на диске.</p><p class="error" id="project-new-error"></p>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Создать',class:'primary',action:async()=>{if(submitting)return;submitting=true;$('#dialog-action-1').disabled=true;try{
    const name=$('#project-new-name').value.trim(),year=$('#project-new-year').value.trim();if(!name)throw Error('Укажите название');const m=year.match(/^(\d{4})\s*[-–/]\s*(\d{4})$/);if(!m||+m[2]!==+m[1]+1)throw Error('Учебный год: например, 2026-2027');
    const next=PM.newProject({...db,preferences:settings},name,m[1]+'-'+m[2],$('#project-copy-directories').checked),native=projectNative(),info=native?await native.NewProject(JSON.stringify(next)):{name:name+'.parallel',modified:true};$('#dialog').close();projectAdopt(next,info);dirty=true;render();message('Создано новое расписание. Выберите «Сохранить», чтобы указать файл.');
-  }catch(e){$('#project-new-error').textContent=e.message||String(e)}}}]);
- }catch(e){message(e.message||String(e))}
+  }catch(e){$('#project-new-error').textContent=e.message||String(e)}finally{submitting=false;if($('#dialog').open)$('#dialog-action-1').disabled=false}}}]);});
+ }catch(e){message(e.message||String(e))}});
 }
 $('#open-file').onclick=()=>projectOpen();$('#save-file').onclick=()=>projectSave();
 if(projectNative())$('#exit-application').onclick=()=>window.parallelClose();
 $('#file').onchange=async e=>{
  const file=e.target.files[0];if(!file)return;
- try{await projectFlush();if(!await projectConfirm())return;const bytes=new Uint8Array(await file.arrayBuffer()),r=await fetch('/api/project/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:ParallelWire.toBase64(bytes)})}),result=await r.json();if(!r.ok)throw Error(result.error);projectAdopt(normalize(result.state),{name:file.name,modified:false});dirty=true;await persist();message('Открыто: '+file.name)}catch(error){message('Импорт не выполнен: '+error.message)}finally{e.target.value=''}
+ return projectTask(async()=>{try{await projectFlush();if(!await projectConfirm())return;const bytes=new Uint8Array(await file.arrayBuffer()),r=await fetch('/api/project/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:ParallelWire.toBase64(bytes)})}),result=await r.json();if(!r.ok)throw Error(result.error);projectAdopt(normalize(result.state),{name:file.name,modified:false});dirty=true;await persist();message('Открыто: '+file.name)}catch(error){message('Импорт не выполнен: '+error.message)}finally{e.target.value=''}});
 };
 document.addEventListener('keydown',e=>{
  if(!(e.ctrlKey||e.metaKey)||!['s','o','n'].includes(e.key.toLowerCase()))return;
@@ -100,8 +136,9 @@ function projectExportTable(template=false){
  }catch(e){$('#table-export-error').textContent=e.message||String(e)}}}]);
 }
 async function projectImportTable(){
+ if(projectBusy||loading)return;
  try{
-  const native=projectNative();if(native){const content=await native.ReadSpreadsheet();if(!content.data)return;projectImportPreview(JSON.parse(await ParallelWire.decode(content)));return}
+  const native=projectNative();if(native){return await projectTask(async()=>{const content=await native.ReadSpreadsheet();if(content.data)projectImportPreview(JSON.parse(await ParallelWire.decode(content)))})}
   const input=document.createElement('input');input.type='file';input.accept='.xlsx,.csv,.tsv';input.id='table-file-input';input.hidden=true;document.body.append(input);input.onchange=async()=>{try{const f=input.files[0];if(!f)return;const r=await fetch('/api/spreadsheet/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:f.name,data:ParallelWire.toBase64(new Uint8Array(await f.arrayBuffer()))})}),result=await r.json();if(!r.ok)throw Error(result.error);projectImportPreview(result)}catch(e){message('Таблица не импортирована: '+e.message)}finally{input.remove()}};input.click();
  }catch(e){message('Таблица не открыта: '+(e.message||e))}
 }
@@ -127,7 +164,13 @@ renderData=function(){
  $('#data-project-new').onclick=projectNew;$('#data-project-open').onclick=()=>projectOpen();$('#data-project-save').onclick=()=>projectSave();$('#data-project-saveas').onclick=()=>projectSave(true);$('#data-table-import').onclick=projectImportTable;$('#data-table-export').onclick=()=>projectExportTable();$('#data-table-template').onclick=()=>projectExportTable(true);$('#project-recovery-folder').onclick=()=>fetch('/api/open-folder',{method:'POST'});$('#project-json-backup').onclick=()=>download('Расписание_резервная-копия.json',JSON.stringify({...db,preferences:settings}));
 };
 document.addEventListener('parallel:workspace-ready',async()=>{
- const native=projectNative();if(native){projectSetInfo(await native.ProjectInfo());const pending=await native.PendingProject();if(pending.token){if(await projectConfirm()){try{const next=normalize(JSON.parse(await ParallelWire.decode(pending.content))),info=await native.ActivateProject(pending.token);projectAdopt(next,info)}catch(e){message('Файл не открыт: '+e.message)}}}}
- else projectSetInfo({name:(db.meta.projectName||'Расписание')+'.parallel',modified:true,recent:[]});
+ projectLock(true);
+ try{
+  const native=projectNative();
+  if(native)projectSetInfo(await native.ProjectInfo());
+  else projectSetInfo({name:(db.meta.projectName||'Расписание')+'.parallel',modified:true,recent:[]});
+  projectInitialised=true;projectPendingSignal=!!native;
+ }catch(e){message('Не удалось подключить файл расписания: '+(e.message||e))}
+ finally{projectReadyResolve(projectInitialised);projectLock(!projectInitialised)}
 }, {once:true});
-if(projectNative())window.runtime.EventsOn('parallel:project-request',async selected=>{try{await projectFlush();if(!await projectConfirm())return;const next=normalize(JSON.parse(await ParallelWire.decode(selected.content))),info=await projectNative().ActivateProject(selected.token);projectAdopt(next,info)}catch(e){message('Файл не открыт: '+e.message)}});
+if(projectNative()&&window.runtime?.EventsOn)window.runtime.EventsOn('parallel:project-request',()=>{projectPendingSignal=true;projectPumpRequests()});
