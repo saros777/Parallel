@@ -1,0 +1,5 @@
+7c8532ccb526f42c902ec735d4b3f3b88a4183c80a12b1cd32984c49c494d840  Parallel-5.4-App.zip
+74239d0762b9ec77ad921367b7afba493c66e5cd1af2c0a440a0bd42da8d78a6  Parallel-5.4-School.parallel
+e8d7debbdb7fbd821e86b9e5dff99588ad9d0e3a75c940afb68f99d5aac4a9bb  Parallel-5.4-Source.zip
+96d59a99d276cae3f2d7a335f796a7174e4cddd4a6239bee4288e0367805a556  Parallel-5.4-Verification.json
+6d3d244299f4c901d906492e443a0b7e184e7fc4686d6206ef21b4fe2bb1c3b3  Parallel-5.4-x64.msi
