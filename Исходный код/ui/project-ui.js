@@ -33,9 +33,9 @@ async function projectFlush(){
  clearTimeout(saveTimer);saveAgain=false;
 }
 
-let projectReadyResolve;
+let projectReadyResolve;const projectIdleWaiters=[];
 window.parallelProjectReady=new Promise(resolve=>projectReadyResolve=resolve);
-function projectLock(value){projectBusy=value;const shell=$('.app-shell');if(shell)shell.inert=value;if(!value)setTimeout(projectPumpRequests,0)}
+function projectLock(value){projectBusy=value;const shell=$('.app-shell');if(shell)shell.inert=value;if(!value){for(const resolve of projectIdleWaiters.splice(0))resolve();setTimeout(projectPumpRequests,0)}}
 async function projectTask(action){
  if(projectBusy)return false;
  if(loading||!connected||!projectInitialised){message('Дождитесь открытия рабочей копии.');return false}
@@ -48,7 +48,7 @@ function projectDialogClosed(build){return new Promise(resolve=>{
  element.addEventListener('close',closed);
 })}
 async function projectPumpRequests(){
- const native=projectNative();if(!native||!projectInitialised||!projectPendingSignal||projectBusy||$('#dialog').open)return;
+ const native=projectNative();if(!native||!projectInitialised||!projectPendingSignal||projectBusy||window.parallelClosing||$('#dialog').open)return;
  projectPendingSignal=false;
  try{await projectTask(async()=>{
   await projectFlush();
@@ -88,7 +88,7 @@ function projectConfirm(){
  });
 }
 window.parallelBeforeClose=async()=>{
- if(projectBusy)return false;
+ if(projectBusy&&!$('#dialog').open){message('Завершаю файловую операцию перед закрытием…');await new Promise(resolve=>projectIdleWaiters.push(resolve))}
  if($('#dialog').open){message('Сначала сохраните или закройте текущую карточку.');return false}
  return projectTask(()=>projectConfirm());
 };

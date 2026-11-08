@@ -18,14 +18,16 @@ if(window.DESKTOP?.native){
  };
  let closing=false;
  window.parallelClose=async()=>{
-  if(closing)return;closing=true;
+  if(closing)return;closing=true;window.parallelClosing=true;let exiting=false;
   try{
    if(saving){message('Завершаю сохранение…');for(let i=0;i<100&&saving;i++)await new Promise(r=>setTimeout(r,100))}
    if(dirty)await persist();
    if(saveError||dirty||saving){message('Окно не закрыто: изменения ещё не сохранены. '+saveError);return}
    if(window.parallelBeforeClose&&!await window.parallelBeforeClose())return;
-   await native.Request('/api/shutdown','POST','');
-  }finally{closing=false}
+   const response=await native.Request('/api/shutdown','POST','');
+   if(response.status!==200)throw Error('Завершение работы не подтверждено');
+   exiting=true;const shell=document.querySelector?.('.app-shell');if(shell)shell.inert=true;
+  }catch(e){message('Не удалось закрыть программу: '+(e.message||e))}finally{closing=exiting;window.parallelClosing=exiting}
  };
  window.runtime.EventsOn('parallel:close-request',window.parallelClose);
  document.documentElement.classList.add('native-window');

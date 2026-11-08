@@ -11,7 +11,7 @@ const assert=require('node:assert/strict'),vm=require('node:vm'),fs=require('nod
  vm.runInContext(fs.readFileSync('ui/native.js','utf8'),context);
  await events.get('parallel:workspace-ready')();assert.equal(readyCalls.length,0);timers.shift()();assert.equal(readyCalls[0].renderSignal,'background-timer');frames.shift()();frames.shift()();assert.equal(readyCalls.length,1,'ready must be reported once when frames resume');
  await context.download('backup.json','saved data');assert(messages.includes('Файл сохранён.'));
- calls.length=0;await events.get('parallel:close-request')();assert(!context.dirty);assert.equal(calls.at(-1).path,'/api/shutdown');
- calls.length=0;context.dirty=true;context.saveError='disk full';context.persist=async()=>{};await events.get('parallel:close-request')();assert.equal(calls.length,0,'native window must not close after failed save');
+ calls.length=0;context.dirty=true;context.saveError='disk full';context.persist=async()=>{};await events.get('parallel:close-request')();assert.equal(calls.length,0,'native window must not close after failed save');assert.equal(context.window.parallelClosing,false);
+ context.saveError='';context.persist=async()=>{context.dirty=false};await events.get('parallel:close-request')();assert(!context.dirty);assert.equal(calls.at(-1).path,'/api/shutdown');assert.equal(context.window.parallelClosing,true,'new document requests must stay paused after shutdown was accepted');
  console.log('Native transport: IPC response/status, OS file dialog payload, save-before-close, failed-save protection and suspended-frame startup passed');
 })().catch(e=>{console.error(e);process.exit(1)});
