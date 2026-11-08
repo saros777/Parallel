@@ -77,13 +77,21 @@ async function projectSaveInternal(saveAs=false){
   return true;
  }catch(e){message('Не удалось сохранить расписание: '+(e.message||e));return false}
 }
+function projectHoldDialog(element=$('#dialog')){
+ const buttons=[...element.querySelectorAll('button')].map(button=>[button,button.disabled]);
+ const preventCancel=e=>e.preventDefault();element.addEventListener('cancel',preventCancel);for(const [button]of buttons)button.disabled=true;
+ return()=>{element.removeEventListener('cancel',preventCancel);for(const [button,disabled]of buttons)button.disabled=disabled};
+}
 function projectConfirm(){
  if(!projectModified)return Promise.resolve(true);
  return new Promise(resolve=>{
-  const element=$('#dialog');let done=false;
+  const element=$('#dialog');let done=false,submitting=false;
   const onClose=()=>{if(!element.open&&!done){done=true;element.removeEventListener('close',onClose);resolve(false)}};
   const finish=value=>{if(done)return;done=true;element.removeEventListener('close',onClose);element.close();resolve(value)};
-  dialog('Сохранить изменения расписания?',`<p>Файл: <strong>${h(projectInfo?.name||'Без названия.parallel')}</strong></p><p>Сохраните изменения в отдельный файл, прежде чем продолжить.</p>`,[{text:'Сохранить',class:'primary',action:async()=>{if(await projectSaveInternal())finish(true)}},{text:'Продолжить без сохранения',action:()=>finish(true)},{text:'Отмена',action:()=>finish(false)}]);
+  dialog('Сохранить изменения расписания?',`<p>Файл: <strong>${h(projectInfo?.name||'Без названия.parallel')}</strong></p><p>Сохраните изменения в отдельный файл, прежде чем продолжить.</p>`,[{text:'Сохранить',class:'primary',action:async()=>{
+   if(submitting)return;submitting=true;const release=projectHoldDialog(element);
+   try{if(await projectSaveInternal())finish(true)}finally{submitting=false;release()}
+  }},{text:'Продолжить без сохранения',action:()=>finish(true)},{text:'Отмена',action:()=>finish(false)}]);
   $('#dialog-action-0').focus();element.addEventListener('close',onClose);
  });
 }
@@ -105,10 +113,10 @@ async function projectOpen(index=null){
 async function projectNew(){
  if($('#dialog').open)return;
  return projectTask(async()=>{try{await projectFlush();if(!await projectConfirm())return;
-  await projectDialogClosed(()=>{let submitting=false;dialog('Новое расписание',`<div class="directory-form"><label>Название<input id="project-new-name" value="Новое расписание"></label><label>Учебный год<input id="project-new-year" value="${h(db.meta.academicYear||'2026-2027')}"></label><label class="checkbox-line full"><input type="checkbox" id="project-copy-directories" checked>Скопировать справочники и нагрузку; все карточки поместить в резерв</label></div><p class="hint">Новое расписание сохраняется в собственный файл. Текущее расписание не заменяется на диске.</p><p class="error" id="project-new-error"></p>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Создать',class:'primary',action:async()=>{if(submitting)return;submitting=true;$('#dialog-action-1').disabled=true;try{
+  await projectDialogClosed(()=>{let submitting=false;dialog('Новое расписание',`<div class="directory-form"><label>Название<input id="project-new-name" value="Новое расписание"></label><label>Учебный год<input id="project-new-year" value="${h(db.meta.academicYear||'2026-2027')}"></label><label class="checkbox-line full"><input type="checkbox" id="project-copy-directories" checked>Скопировать справочники и нагрузку; все карточки поместить в резерв</label></div><p class="hint">Новое расписание сохраняется в собственный файл. Текущее расписание не заменяется на диске.</p><p class="error" id="project-new-error"></p>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Создать',class:'primary',action:async()=>{if(submitting)return;submitting=true;const release=projectHoldDialog();try{
    const name=$('#project-new-name').value.trim(),year=$('#project-new-year').value.trim();if(!name)throw Error('Укажите название');const m=year.match(/^(\d{4})\s*[-–/]\s*(\d{4})$/);if(!m||+m[2]!==+m[1]+1)throw Error('Учебный год: например, 2026-2027');
    const next=PM.newProject({...db,preferences:settings},name,m[1]+'-'+m[2],$('#project-copy-directories').checked),native=projectNative(),info=native?await native.NewProject(JSON.stringify(next)):{name:name+'.parallel',modified:true};$('#dialog').close();projectAdopt(next,info);dirty=true;render();message('Создано новое расписание. Выберите «Сохранить», чтобы указать файл.');
-  }catch(e){$('#project-new-error').textContent=e.message||String(e)}finally{submitting=false;if($('#dialog').open)$('#dialog-action-1').disabled=false}}}]);});
+  }catch(e){$('#project-new-error').textContent=e.message||String(e)}finally{submitting=false;release()}}}]);});
  }catch(e){message(e.message||String(e))}});
 }
 $('#open-file').onclick=()=>projectOpen();$('#save-file').onclick=()=>projectSave();
