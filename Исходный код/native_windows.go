@@ -61,6 +61,11 @@ func runDesktop(dir string, initialPaths ...string) error {
 	log.SetOutput(logfile)
 	var ctx context.Context
 	var closing atomic.Bool
+	bridge.wakeProjects = func() {
+		wruntime.WindowUnminimise(ctx)
+		wruntime.WindowShow(ctx)
+		wruntime.EventsEmit(ctx, "parallel:project-request")
+	}
 	bridge.quit = func() { closing.Store(true); wruntime.Quit(ctx) }
 	bridge.openFile = func(kind string) (string, error) {
 		filters := []wruntime.FileFilter{{DisplayName: "Расписание Параллель", Pattern: "*.parallel"}, {DisplayName: "Резервные копии JSON", Pattern: "*.json"}}
@@ -107,12 +112,13 @@ func runDesktop(dir string, initialPaths ...string) error {
 			ctx = c
 			// Wails has acquired its single-instance lock before this callback.
 			// A forwarded second launch must never restore over the active recovery.
-			bridge.initialiseErr = bridge.restoreProject()
+			bridge.initialiseErr = bridge.initialiseStore()
 			if bridge.initialiseErr == nil && len(initialPaths) > 0 && initialPaths[0] != "" {
 				bridge.queueProject(initialPaths[0])
 			}
 			close(bridge.initialised)
 			if bridge.initialiseErr != nil {
+				log.Printf("Native startup failed: %v", bridge.initialiseErr)
 				wruntime.MessageDialog(c, wruntime.MessageDialogOptions{Type: wruntime.ErrorDialog, Title: "Не удалось открыть расписание", Message: bridge.initialiseErr.Error()})
 				closing.Store(true)
 				wruntime.Quit(c)
@@ -131,8 +137,6 @@ func runDesktop(dir string, initialPaths ...string) error {
 				return
 			}
 			if ctx != nil {
-				wruntime.WindowUnminimise(ctx)
-				wruntime.WindowShow(ctx)
 				for _, arg := range data.Args {
 					if strings.EqualFold(filepath.Ext(arg), ".parallel") {
 						path := arg
@@ -140,12 +144,11 @@ func runDesktop(dir string, initialPaths ...string) error {
 							path = filepath.Join(data.WorkingDirectory, path)
 						}
 						bridge.queueProject(path)
-						if bridge.initialiseErr == nil {
-							wruntime.EventsEmit(ctx, "parallel:project-request")
-						}
-
 						break
 					}
+				}
+				if bridge.ready.Load() {
+					bridge.wakeProjects()
 				}
 			}
 		}},

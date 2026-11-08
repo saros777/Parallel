@@ -228,3 +228,39 @@ func TestStaleLockRemovalFailureIsBounded(t *testing.T) {
 		t.Fatal("failed lock removal was ignored")
 	}
 }
+
+func TestDeferredBridgeDoesNotTouchRecovery(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "workspace.json")
+	os.WriteFile(path, []byte("damaged"), 0600)
+	b, err := newDesktopBridge(dir, true)
+	if err != nil {
+		t.Fatal("secondary process read recovery before owning instance lock", err)
+	}
+	if b.store != nil || b.handler != nil {
+		t.Fatal("deferred bridge already opened the store")
+	}
+	b.initialiseErr = b.initialiseStore()
+	close(b.initialised)
+	if b.initialiseErr == nil {
+		t.Fatal("owner did not validate recovery")
+	}
+	if r := b.Request("/api/state", "GET", ""); r.Status != 500 {
+		t.Fatal("startup error not propagated")
+	}
+	raw, _ := os.ReadFile(path)
+	if string(raw) != "damaged" {
+		t.Fatal("damaged recovery was replaced")
+	}
+}
+func TestReadyWakesQueuedRequestsExactlyOnce(t *testing.T) {
+	b := projectBridge(t)
+	b.queueProject(filepath.Join(t.TempDir(), "Later.parallel"))
+	calls := 0
+	b.wakeProjects = func() { calls++ }
+	b.Ready(`{}`)
+	b.Ready(`{}`)
+	if calls != 1 {
+		t.Fatal("startup request not delivered exactly once", calls)
+	}
+}

@@ -101,7 +101,7 @@ func TestProjectForwardedLaunchDefersRestoration(t *testing.T) {
 	if !bytes.Equal(before, after) {
 		t.Fatal("Second launch restored over active recovery before obtaining the single-instance lock")
 	}
-	deferred.initialiseErr = deferred.restoreProject()
+	deferred.initialiseErr = deferred.initialiseStore()
 	close(deferred.initialised)
 	if deferred.initialiseErr != nil {
 		t.Fatal(deferred.initialiseErr)

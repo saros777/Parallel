@@ -277,7 +277,9 @@ func (b *DesktopBridge) projectInfoLocked() ProjectInfo {
 	return ProjectInfo{Revision: b.store.data.Revision, Path: b.projectSession.Path, Name: name, Modified: b.projectSession.SavedRevision != b.store.data.Revision, Recent: append([]string{}, b.projectSession.Recent...)}
 }
 func (b *DesktopBridge) ProjectInfo() ProjectInfo {
-	<-b.initialised
+	if b.awaitInitialised() != nil {
+		return ProjectInfo{Modified: true}
+	}
 	b.projectMu.Lock()
 	defer b.projectMu.Unlock()
 	return b.projectInfoLocked()

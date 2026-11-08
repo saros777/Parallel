@@ -33,6 +33,7 @@ type DesktopBridge struct {
 	projectSession  projectSession
 	pendingProject  *pendingProject
 	pendingRequests []string
+	wakeProjects    func()
 	openFile        func(string) (string, error)
 	savePath        func(string, string) (string, error)
 	handler         http.Handler
@@ -48,25 +49,32 @@ type BridgeResponse struct {
 }
 
 func newDesktopBridge(dir string, deferRestore ...bool) (*DesktopBridge, error) {
-	store, err := openStore(dir)
-	if err != nil {
-		return nil, err
-	}
 	var random [32]byte
-	if _, err = rand.Read(random[:]); err != nil {
+	if _, err := rand.Read(random[:]); err != nil {
 		return nil, err
 	}
-	b := &DesktopBridge{dir: dir, store: store, token: hex.EncodeToString(random[:]), origin: "http://parallel.desktop", initialised: make(chan struct{})}
-	app := &App{store: store, token: b.token, origin: b.origin}
-	b.handler = app.routes()
+	b := &DesktopBridge{dir: dir, token: hex.EncodeToString(random[:]), origin: "http://parallel.desktop", initialised: make(chan struct{})}
 	if len(deferRestore) == 0 || !deferRestore[0] {
-		b.initialiseErr = b.restoreProject()
+		b.initialiseErr = b.initialiseStore()
 		close(b.initialised)
 		if b.initialiseErr != nil {
 			return nil, b.initialiseErr
 		}
 	}
 	return b, nil
+}
+
+// Native startup calls this only AFTER Wails owns the single-instance lock.
+// A secondary EXE must not even open workspace.json while the owner commits it.
+func (b *DesktopBridge) initialiseStore() error {
+	store, err := openStore(b.dir)
+	if err != nil {
+		return err
+	}
+	b.store = store
+	app := &App{store: store, token: b.token, origin: b.origin}
+	b.handler = app.routes()
+	return b.restoreProject()
 }
 func (b *DesktopBridge) Ready(timings string) {
 	if err := b.awaitInitialised(); err != nil {
@@ -86,6 +94,12 @@ func (b *DesktopBridge) Ready(timings string) {
 	}
 	raw, _ := json.Marshal(map[string]any{"version": version, "readyUtc": time.Now().UTC().Format(time.RFC3339Nano), "elapsedMs": time.Since(appStarted).Milliseconds(), "revision": revision, "stateJSONBytes": b.stateJSONBytes.Load(), "stateIPCBytes": b.stateWireBytes.Load(), "stateReadMs": b.stateReadMS.Load(), "statePackMs": b.statePackMS.Load(), "frontend": frontend})
 	_ = atomicWrite(filepath.Join(b.dir, "startup-timing.json"), raw)
+	b.projectMu.Lock()
+	pending := len(b.pendingRequests) > 0
+	b.projectMu.Unlock()
+	if pending && b.wakeProjects != nil {
+		b.wakeProjects()
+	}
 }
 func (b *DesktopBridge) LogFrontendError(message string) {
 	log.Printf("Frontend error: %.4096s", message)
