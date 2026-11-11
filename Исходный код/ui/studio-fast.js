@@ -1,7 +1,7 @@
 /* Reuse existing cells and resolve a target day once, rather than the whole year. */
 let studioPaintShape=null,studioFitFrame=0,studioConflictKeys=new Set();
 const studioTextCache=new Map(),studioMeasureCanvas=document.createElement('canvas'),studioMeasureContext=studioMeasureCanvas.getContext('2d');
-function studioTextMeasure(text){if(!studioTextCache.has(text)){if(studioMeasureContext)studioMeasureContext.font='650 100px Inter, Arial, sans-serif';studioTextCache.set(text,Math.max(.5,studioMeasureContext?studioMeasureContext.measureText(text).width/100:[...text].length*.65).toFixed(3))}return studioTextCache.get(text)}
+function studioTextMeasure(text){if(!studioTextCache.has(text)){if(studioMeasureContext)studioMeasureContext.font='400 100px Inter, Arial, sans-serif';studioTextCache.set(text,Math.max(.5,studioMeasureContext?studioMeasureContext.measureText(text).width/100:[...text].length*.65).toFixed(3))}return studioTextCache.get(text)}
 const studioFitImmediate=studioFit;
 studioFit=function(){if(!studioFitFrame)studioFitFrame=requestAnimationFrame(()=>{
  studioFitFrame=0;if(!CSS.supports('container-type','size')){studioFitImmediate();return}

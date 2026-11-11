@@ -28,7 +28,7 @@ import (
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "5.4.1"
+const version = "5.4.2"
 const appID = "parallel-school-desktop"
 
 var appStarted = time.Now()

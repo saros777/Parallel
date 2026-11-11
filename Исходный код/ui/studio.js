@@ -112,6 +112,7 @@ function studioPark(area){
  if(!studioPick)return;try{const picked=studioRows.find(l=>l.id===studioPick.id);const members=picked.blockId?studioRows.filter(l=>l.blockId===picked.blockId&&l.date===picked.date):[picked];const p=members.flatMap(l=>W.park(studioWork,l.id)).map(p=>({...p,after:{...p.after,parkingArea:area}}));studioApply(area==='side'?'Убрать в боковую область':'Убрать в неразмещённые',p)}catch(e){message(e.message)}
 }
 let studioPointer={x:0,y:0};
+function studioPositionGhost(){if(studioGhost)studioGhost.style.transform=`translate3d(${studioPointer.x}px,${studioPointer.y}px,0) translate(-50%,-50%)`}
 function studioCancel(){studioClosePopup();studioPick=null;studioGhost?.remove();studioGhost=null;$$('.picked,.target-ok,.target-bad,.target-block,.target-pending').forEach(e=>e.classList.remove('picked','target-ok','target-bad','target-block','target-pending'));$('#studio-hint')?.replaceChildren(document.createTextNode('Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить'))}
 function studioTake(id){
  const l=studioRows.find(l=>l.id===id);if(!l)return;
@@ -120,7 +121,7 @@ function studioTake(id){
  studioGhost=document.createElement('div');studioGhost.id='studio-ghost';studioGhost.innerHTML=card(l)+'<small>Выберите ячейку · Esc — отмена</small>';document.body.append(studioGhost);
  const source=$$('[data-lesson]').find(e=>e.dataset.lesson===id),rect=source?.getBoundingClientRect();
  studioGhost.style.setProperty('--ghost-width',Math.max(32,rect?.width||44)+'px');studioGhost.style.setProperty('--ghost-height',Math.max(14,rect?.height||22)+'px');studioGhost.style.setProperty('--ghost-font',source?getComputedStyle(source).fontSize:'12px');
- studioGhost.style.transform=`translate3d(${Math.min(innerWidth-180,studioPointer.x+10)}px,${Math.min(innerHeight-70,studioPointer.y+10)}px,0)`;
+ studioPositionGhost();
  $$('[data-lesson]').filter(e=>e.dataset.lesson===id).forEach(e=>e.classList.add('picked'));
  const key=studioAxis==='teachers'?'teacherId':studioAxis==='rooms'?'roomId':'classId';
  $$('[data-row-head]').forEach(e=>{e.classList.toggle('target-ok',e.dataset.rowHead===l[key]);e.classList.toggle('target-block',e.dataset.rowHead!==l[key])});
@@ -194,14 +195,14 @@ bindCards=function(){
  }
  $$('[data-lesson]').forEach(b=>{
   b.draggable=false;
-  b.onclick=e=>{if(studioPick){if(b.closest('td'))return; e.stopPropagation();if(b.dataset.lesson===studioPick.id)studioCancel();else studioPark(b.closest('[data-park]').dataset.park);return}e.stopPropagation();studioTake(b.dataset.lesson)};
+  b.onclick=e=>{if(studioPick){if(b.closest('td'))return; e.stopPropagation();if(b.dataset.lesson===studioPick.id)studioCancel();else studioPark(b.closest('[data-park]').dataset.park);return}e.stopPropagation();if(e.detail>0)studioPointer={x:e.clientX,y:e.clientY};else{const r=b.getBoundingClientRect();studioPointer={x:r.left+r.width/2,y:r.top+r.height/2}}studioTake(b.dataset.lesson)};
   b.oncontextmenu=e=>{e.preventDefault();studioCancel();showLesson(b.dataset.lesson)};
  });
  $$('[data-entity]').forEach(td=>{
   td.onclick=()=>{if(studioPick)studioPlace(td)};
   td.onpointerenter=()=>studioHover(td);
   td.oncontextmenu=e=>{e.preventDefault();studioCancel();const l=td.querySelector('[data-lesson]');if(l)showLesson(l.dataset.lesson);else if(['classes','general'].includes(studioAxis))showLesson(null,{classId:td.dataset.entity,date:td.dataset.date,slot:+td.dataset.slot})};
-  td.onkeydown=e=>{if(e.target===td&&(e.key==='Enter'||e.key===' ')){e.preventDefault();if(studioPick)studioPlace(td);else {const b=td.querySelector('[data-lesson]');if(b)studioTake(b.dataset.lesson)}}};
+  td.onkeydown=e=>{if(e.target===td&&(e.key==='Enter'||e.key===' ')){e.preventDefault();if(studioPick)studioPlace(td);else {const b=td.querySelector('[data-lesson]');if(b){const r=b.getBoundingClientRect();studioPointer={x:r.left+r.width/2,y:r.top+r.height/2};studioTake(b.dataset.lesson)}}}};
  });
  $$('[data-park]').forEach(t=>t.onclick=e=>{if(!e.target.closest('select,button')&&studioPick)studioPark(t.dataset.park)});
 };
@@ -252,7 +253,7 @@ showAbsence=function(){
  b.textContent='Добавить и показать снятые уроки';b.onclick=()=>{act();if(!$('#dialog').open){studioPeriod='weeks';setRoute('schedule')}};
 };
 let studioPointerFrame=0;
-document.addEventListener('pointermove',e=>{studioPointer={x:e.clientX,y:e.clientY};if(studioGhost&&!studioPointerFrame)studioPointerFrame=requestAnimationFrame(()=>{studioPointerFrame=0;if(studioGhost)studioGhost.style.transform=`translate3d(${Math.max(0,Math.min(innerWidth-180,studioPointer.x+10))}px,${Math.max(0,Math.min(innerHeight-70,studioPointer.y+10))}px,0)`})});
+document.addEventListener('pointermove',e=>{studioPointer={x:e.clientX,y:e.clientY};if(studioGhost&&!studioPointerFrame)studioPointerFrame=requestAnimationFrame(()=>{studioPointerFrame=0;studioPositionGhost()})});
 document.addEventListener('keydown',e=>{if(e.key==='Escape')studioCancel()});
 $('#dialog').addEventListener('close',()=>{$('#dialog').style.margin='';$('#dialog').style.left='';$('#dialog').style.top=''});
 const studioBootRender=render;

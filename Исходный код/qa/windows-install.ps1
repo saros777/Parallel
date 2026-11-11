@@ -5,7 +5,7 @@ $install = Join-Path $env:LOCALAPPDATA 'Programs\ParallelDesktop'
 $data = Join-Path $env:LOCALAPPDATA 'ParallelSchool'
 $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 $report = [ordered]@{
-    version = '5.4.1'; sourceCommit = (git -C $root rev-parse HEAD)
+    version = '5.4.2'; sourceCommit = (git -C $root rev-parse HEAD)
     os = [Environment]::OSVersion.VersionString
     installerFormat = 'Windows Installer MSI'; installerScripts = 'none'
     applicationSignature = 'NotSigned: no publisher code-signing certificate provided'
