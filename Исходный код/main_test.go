@@ -38,12 +38,19 @@ func TestSeedAndReopen(t *testing.T) {
 	}
 	var data map[string]json.RawMessage
 	json.Unmarshal(s.data.State, &data)
-	for key, count := range map[string]int{"classes": 25, "teachers": 42, "lessons": 16421} {
+	for key, count := range map[string]int{"classes": 25, "teachers": 42, "lessons": 0} {
 		var rows []any
 		json.Unmarshal(data[key], &rows)
 		if len(rows) != count {
 			t.Fatalf("%s: %d", key, len(rows))
 		}
+	}
+	var baseline struct {
+		Lessons []any `json:"lessons"`
+	}
+	json.Unmarshal(data["baseSchedule"], &baseline)
+	if len(baseline.Lessons) != 862 {
+		t.Fatalf("base schedule lessons: %d", len(baseline.Lessons))
 	}
 	if err := validateState(s.data.State); err != nil {
 		t.Fatal(err)
@@ -57,6 +64,35 @@ func TestSeedAndReopen(t *testing.T) {
 	json.Compact(&reopenedCompact, reopened.data.State)
 	if !bytes.Equal(reopenedCompact.Bytes(), originalCompact.Bytes()) {
 		t.Fatal("Reopen failed", err)
+	}
+}
+
+func TestScheduleBaselineMigrationIsBackedUp(t *testing.T) {
+	dir := t.TempDir()
+	seed, err := bundled.ReadFile("seed.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var old map[string]any
+	if err := json.Unmarshal(seed, &old); err != nil {
+		t.Fatal(err)
+	}
+	old["meta"].(map[string]any)["scheduleBaselineRevision"] = 0
+	oldState, _ := json.Marshal(old)
+	envelope, _ := json.Marshal(Envelope{Revision: 7, State: oldState, Updated: "old", Project: &projectSession{Path: "old.parallel"}})
+	if err := os.WriteFile(filepath.Join(dir, "workspace.json"), envelope, 0600); err != nil {
+		t.Fatal(err)
+	}
+	s, err := openStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.data.Revision != 8 || s.data.Project != nil || !bytes.Equal(bytes.TrimSpace(s.data.State), bytes.TrimSpace(seed)) {
+		t.Fatal("new verified schedule was not installed cleanly")
+	}
+	backups, _ := filepath.Glob(filepath.Join(dir, "backups", "before-schedule-5.4.5-*.json"))
+	if len(backups) != 1 {
+		t.Fatalf("migration backups: %d", len(backups))
 	}
 }
 

@@ -28,8 +28,9 @@ import (
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "5.4.4"
+const version = "5.4.5"
 const appID = "parallel-school-desktop"
+const scheduleBaselineRevision = 1
 
 var appStarted = time.Now()
 
@@ -183,6 +184,22 @@ func openStore(dir string) (*Store, error) {
 		if json.Unmarshal(raw, &s.data) != nil || validateState(s.data.State) != nil {
 			return nil, errors.New("рабочая база повреждена и НЕ была заменена. Сохраните workspace.json и восстановите файл из папки backups")
 		}
+		seed, seedErr := bundled.ReadFile("seed.json")
+		if seedErr == nil && needsScheduleBaseline(s.data.State, seed) {
+			backupDir := filepath.Join(dir, "backups")
+			if err := os.MkdirAll(backupDir, 0700); err != nil {
+				return nil, err
+			}
+			backup := filepath.Join(backupDir, "before-schedule-5.4.5-"+time.Now().UTC().Format("20060102-150405.000000000")+".json")
+			if err := atomicWrite(backup, raw); err != nil {
+				return nil, fmt.Errorf("не удалось сохранить резервную копию перед заменой расписания: %w", err)
+			}
+			s.data = Envelope{Revision: s.data.Revision + 1, State: seed, Updated: time.Now().UTC().Format(time.RFC3339)}
+			next, _ := json.Marshal(s.data)
+			if err := atomicWrite(path, next); err != nil {
+				return nil, err
+			}
+		}
 		return s, nil
 	}
 	if !os.IsNotExist(err) {
@@ -198,6 +215,20 @@ func openStore(dir string) (*Store, error) {
 		return nil, err
 	}
 	return s, nil
+}
+
+func needsScheduleBaseline(current, seed json.RawMessage) bool {
+	type metaState struct {
+		Meta struct {
+			School                   string `json:"school"`
+			ScheduleBaselineRevision int    `json:"scheduleBaselineRevision"`
+		} `json:"meta"`
+	}
+	var old, fresh metaState
+	if json.Unmarshal(current, &old) != nil || json.Unmarshal(seed, &fresh) != nil {
+		return false
+	}
+	return old.Meta.School != "" && old.Meta.School == fresh.Meta.School && old.Meta.ScheduleBaselineRevision < scheduleBaselineRevision
 }
 
 func atomicWrite(path string, data []byte) error {

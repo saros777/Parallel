@@ -1,5 +1,5 @@
 const assert=require('node:assert/strict'),fs=require('node:fs');
-const R=require('./ui/room-engine.js'),E=require('./ui/engine.js');
+global.StudioModel=require('./ui/studio-model.js');const R=require('./ui/room-engine.js'),E=require('./ui/engine.js');
 const lesson=(id,t,slot=1,time='08:00 - 08:45')=>({id,teacherId:t,classId:id,subjectId:'s',date:'2026-09-21',slot,time,roomId:'r3'});
 function fixture(){return {lessons:[lesson('a','t1'),lesson('b','t2'),lesson('c','t3')],overrides:{},extraLessons:[],classes:['a','b','c'].map(id=>({id,name:id})),subjects:[{id:'s',name:'Математика'}],teachers:['t1','t2','t3','t4'].map(id=>({id,name:id})),rooms:['r1','r2','r3'].map(id=>({id,name:id})),teacherSubjects:[{teacherId:'t4',subjectId:'s'}],preferences:{roomPolicy:{schema:1,enabled:true,teacherRooms:{t1:'r1',t2:'r2',t4:'r2'},pool:['r1','r2','r3']}}}}
 let d=fixture(),rows=E.effective(d);
@@ -32,11 +32,11 @@ assert.equal(real.preferences.roomPolicy.teacherRooms['2310937'],'44999');
 assert.equal(real.preferences.roomPolicy.teacherRooms['5954547'],undefined);
 assert.equal(real.preferences.roomPolicy.teacherRooms['554210'],undefined);
 const oldPolicy={roomPolicy:{schema:1,enabled:false,teacherRooms:{'5954547':'45003','554210':'44999','554143':'60195'},pool:['60195']}};
-assert(R.install(real,oldPolicy));assert.equal(oldPolicy.roomPolicy.enabled,false);
-assert.equal(oldPolicy.roomPolicy.teacherRooms['554143'],'60195');
+assert(R.install(real,oldPolicy));assert.equal(oldPolicy.roomPolicy.enabled,true);
+assert.equal(R.number(real.rooms.find(r=>r.id===oldPolicy.roomPolicy.teacherRooms['554143']).name),'15');
 assert.equal(oldPolicy.roomPolicy.teacherRooms['2310913'],'45003');
 assert.equal(oldPolicy.roomPolicy.teacherRooms['2310937'],'44999');
-assert.equal(oldPolicy.roomPolicy.teacherRooms['5954547'],undefined);
+assert.equal(oldPolicy.roomPolicy.teacherRooms['5954547'],undefined);assert.equal(oldPolicy.roomPolicy.assignmentRevision,3);assert.equal(oldPolicy.roomPolicy.teacherRules['554143'].mode,'fixed');
 oldPolicy.roomPolicy.teacherRooms['2310913']='60195';assert(!R.install(real,oldPolicy));assert.equal(oldPolicy.roomPolicy.teacherRooms['2310913'],'60195');
 assert(E.roomOnlyChange(lesson('a','t1'),{...lesson('a','t1'),locked:false,roomId:'r1',roomMode:'manual'}));
 assert(!E.roomOnlyChange(lesson('a','t1'),{...lesson('a','t1'),teacherId:'t2',roomId:'r1'}));
@@ -46,7 +46,7 @@ assert.equal(E.effective(d)[0].roomId,'r1');assert.equal(E.effective(d)[1].roomI
 assert(E.conflicts(d).some(i=>i.kind==='Кабинет занят одновременно'));
 const t=performance.now();rows=E.effective(real);const elapsed=performance.now()-t;
 const issues=E.conflicts(real,rows.filter(x=>x.date==='2026-09-21'));
-assert.equal(issues.filter(x=>x.kind==='Кабинет занят одновременно').length,0);
+assert.equal(issues.filter(x=>x.kind==='Кабинет занят одновременно').length,0);assert.equal(real.baseSchedule.lessons.filter(l=>l.parked&&l.placementIssue).length,4);
 for(const l of rows)assert(!l.roomId||real.rooms.some(r=>r.id===l.roomId));
 const second=performance.now();E.effective(real);
 console.log({roomTests:'passed',assignments:29,rooms:real.rooms.length,firstAllocationMs:Math.round(elapsed),cachedMs:Math.round(performance.now()-second),dayUnassigned:issues.filter(x=>x.kind==='Нет свободного кабинета').length});

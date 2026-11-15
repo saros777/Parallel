@@ -14,13 +14,26 @@
   if(!db.teachers.some(t=>t.id==='554143'&&t.name.startsWith('Дутова')))return false;
   if(preferences.roomPolicy?.schema===1){
    const p=preferences.roomPolicy;
-   if(p.assignmentRevision>=2)return false;
+   if(p.assignmentRevision>=3)return false;
    p.teacherRooms??={};
+   p.teacherRules??={};p.classRooms??={};p.pool??=[];
+   for(const [teacher,n] of Object.entries(assignments)){
+    if(!db.teachers.some(t=>t.id===teacher))continue;
+    let room=db.rooms.find(r=>number(r.name)===String(n));
+    if(!room){room={id:'local-room-'+n,name:String(n),source:'Список строго закреплённых кабинетов'};db.rooms.push(room)}
+    p.teacherRooms[teacher]=room.id;
+    if(!p.teacherRules[teacher])p.teacherRules[teacher]={mode:'fixed',rooms:[room.id],forbidden:[]};
+    if(!p.pool.includes(room.id))p.pool.push(room.id);
+   }
    for(const [teacher,n,previous] of [['2310913',10,'5954547'],['2310937',2,'554210']]){
     const room=db.rooms.find(r=>number(r.name)===String(n));
     if(room&&db.teachers.some(t=>t.id===teacher)){p.teacherRooms[teacher]=room.id;delete p.teacherRooms[previous]}
    }
-   p.assignmentRevision=2;
+   for(const c of db.classes){
+    const head=c.classHeadId||db.teachers.find(t=>t.name===c.classHeadName)?.id,room=head&&p.teacherRooms[head];
+    if(room&&!p.classRooms[c.id]?.length)p.classRooms[c.id]=[room];
+   }
+   p.assignmentRevision=3;p.enabled=true;
    return true;
   }
   const teacherRooms={},pool=[];
@@ -31,7 +44,9 @@
    teacherRooms[teacher]=room.id;if(!pool.includes(room.id))pool.push(room.id);
   }
   pool.sort((a,b)=>number(db.rooms.find(r=>r.id===a)?.name).localeCompare(number(db.rooms.find(r=>r.id===b)?.name),'ru',{numeric:true}));
-  preferences.roomPolicy={schema:1,assignmentRevision:2,enabled:true,teacherRooms,pool,source:'Список кабинетов учителей; уточнения пользователя 20.09.2026: Барышникова 10, Голованев 2'};
+  const teacherRules=Object.fromEntries(Object.entries(teacherRooms).map(([teacher,room])=>[teacher,{mode:'fixed',rooms:[room],forbidden:[]}])),classRooms={};
+  for(const c of db.classes){const head=c.classHeadId||db.teachers.find(t=>t.name===c.classHeadName)?.id,room=head&&teacherRooms[head];if(room)classRooms[c.id]=[room]}
+  preferences.roomPolicy={schema:1,assignmentRevision:3,enabled:true,teacherRooms,teacherRules,classRooms,pool,source:'Список строго закреплённых кабинетов; уточнения: Барышникова 10, Голованев 2'};
   return true;
  }
  const cache=new WeakMap();

@@ -1,4 +1,4 @@
-const E=require('./ui/engine.js'),assert=require('node:assert/strict'),fs=require('node:fs');
+require('./ui/studio-model.js');const E=require('./ui/engine.js'),assert=require('node:assert/strict'),fs=require('node:fs');
 let db={meta:{schemaVersion:'1.0'},classes:[{id:'c1',name:'5а'}],subjects:[{id:'s1',name:'Русский язык'}],teachers:[{id:'t1',name:'Первый'},{id:'t2',name:'Второй'}],rooms:[{id:'r1',name:'1'},{id:'r2',name:'2'}],lessons:[],calendar:[],teacherSubjects:[{teacherId:'t2',subjectId:'s1'}],absences:[],overrides:{}};
 const base={id:'l1',classId:'c1',date:'2026-09-21',slot:1,time:'08:30 - 09:15',subjectId:'s1',teacherId:'t1',roomId:'r1'};
 db.lessons=[base,{...base,id:'l2',slot:3,time:'10:30 - 11:15',teacherId:'t2'},{...base,id:'prev',date:'2026-09-18',slot:2,time:'09:30 - 10:15'}];
@@ -28,8 +28,8 @@ let actual=JSON.parse(fs.readFileSync('seed.json','utf8'));
 assert.equal(E.validate(actual),true);
 assert.equal(actual.students,undefined);assert.equal(actual.documents,undefined);
 const dates=['2026-09-21','2026-11-09','2027-05-17'];
-const stats=dates.map(d=>({date:d,lessons:actual.lessons.filter(l=>l.date===d).length,issues:E.conflicts(actual,actual.lessons.filter(l=>l.date===d)).length}));
+const stats=dates.map(d=>{const lessons=E.effectiveBetween(actual,d,d);return {date:d,lessons:lessons.length,issues:E.conflicts(actual,lessons).length}});
 const links=['classId','subjectId','teacherId','roomId'];
 const sets={classId:new Set(actual.classes.map(x=>x.id)),subjectId:new Set(actual.subjects.map(x=>x.id)),teacherId:new Set(actual.teachers.map(x=>x.id)),roomId:new Set(actual.rooms.map(x=>x.id))};
-for(const l of actual.lessons)for(const k of links)assert(!l[k]||sets[k].has(l[k]),'Broken '+k);
-console.log(JSON.stringify({engineTests:'passed',actualLessons:actual.lessons.length,foreignReferences:'valid',stats},null,2));
+for(const l of actual.baseSchedule.lessons)for(const k of links)assert(!l[k]||sets[k].has(l[k]),'Broken '+k);
+console.log(JSON.stringify({engineTests:'passed',baseLessons:actual.baseSchedule.lessons.length,foreignReferences:'valid',stats},null,2));

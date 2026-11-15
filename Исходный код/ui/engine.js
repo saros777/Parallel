@@ -82,9 +82,9 @@ function disjoint(a,b,db){
 function absenceFor(l,db){return !l.parked&&(db.absences||[]).find(a=>id(a.teacherId)===id(l.teacherId)&&a.startDate<=l.date&&a.endDate>=l.date&&l.slot>=(a.startSlot||1)&&l.slot<=(a.endSlot||20))}
 function pairIssues(a,b,db){
  if(a.id===b.id||a.cancelled||b.cancelled||!overlap(a,b))return [];
- const r=[];
- if(a.teacherId&&a.teacherId===b.teacherId)r.push('Учитель занят одновременно');
- if(a.roomId&&a.roomId===b.roomId)r.push('Кабинет занят одновременно');
+ const r=[],sharedBlock=a.teacherId&&a.teacherId===b.teacherId&&a.classId===b.classId&&a.subjectId===b.subjectId&&disjoint(a,b,db);
+ if(a.teacherId&&a.teacherId===b.teacherId&&!sharedBlock)r.push('Учитель занят одновременно');
+ if(a.roomId&&a.roomId===b.roomId&&!sharedBlock)r.push('Кабинет занят одновременно');
  if(a.classId===b.classId&&!disjoint(a,b,db))r.push('Пересечение класса / состава подгрупп');
  return r;
 }

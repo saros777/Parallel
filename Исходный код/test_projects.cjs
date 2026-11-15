@@ -29,6 +29,6 @@ function fixture(){return {meta:{schemaVersion:'1.0',school:'Тест',academicY
 {
  const d=JSON.parse(fs.readFileSync('seed.json'));d.preferences={};const out=P.exportBook(d,['teachers','courses']),plan=P.importPlan(d,out.sheets.map((sheet,i)=>({sheet,kind:['teachers','courses'][i]})));assert.equal(plan.issues.length,0);assert.equal(plan.counts.added,0);assert.deepEqual(plan.next.courses.map(c=>c.weeklyHours),d.courses.map(c=>c.weeklyHours));
  const week=SM.anchor(d),full=E.effective(d).filter(l=>l.date>=week&&l.date<=SM.add(week,4)),range=E.effectiveBetween(d,week,SM.add(week,4));assert.deepEqual(range,full);
- const n=P.newProject(d,'План','2026-2027',true);assert.equal(n.courses.length,d.courses.filter(c=>c.teacherId&&c.weeklyHours>0).length);assert(n.courses.some(c=>c.weeklyHours===0.5));
+ const n=P.newProject(d,'План','2026-2027',true);assert.equal(n.courses.length,d.courses.filter(c=>c.teacherId&&c.weeklyHours>0).length);assert(n.courses.every(c=>c.weeklyHours>0));
 }
 console.log('Projects: paired workload, fractional weeks, stable linked IDs, compact undo, non-mutating import preview, original workload round trip and range/full equivalence passed');

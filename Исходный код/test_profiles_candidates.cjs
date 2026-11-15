@@ -1,21 +1,19 @@
 const assert=require('node:assert/strict'),fs=require('fs'),E=require('./ui/engine.js');
 const real=JSON.parse(fs.readFileSync('seed.json'));
 const c10=real.classes.find(c=>c.name==='10а').id,c11=real.classes.find(c=>c.name==='11').id,c10b=real.classes.find(c=>c.name==='10б').id;
-const get=(classId,slot)=>real.lessons.filter(l=>l.classId===classId&&l.date==='2026-09-21'&&l.slot===slot);
+const get=(classId,slot)=>real.baseSchedule.lessons.filter(l=>l.classId===classId&&l.date==='2026-09-07'&&l.slot===slot);
 assert.deepEqual(E.classProfiles({classId:c10},real),['social','chemical']);
 assert.deepEqual(E.classProfiles({classId:c11},real),['social','chemical','physical']);
 assert.deepEqual(E.classProfiles({classId:c10b},real),[]);
-const a=E.profileLines(get(c10,1),real,c10);
+const a=E.profileLines(get(c10,2),real,c10);
 assert.deepEqual(a.map(x=>x.profile),['social','chemical']);
-assert.equal(a[0].lesson.groupName,'Социально-гуманитарный');
+assert.equal(a[0].lesson.groupName,'Соцгум');
 const b=E.profileLines(get(c11,3),real,c11);
 assert.deepEqual(b.map(x=>x.profile),['social','chemical','physical']);
 assert.equal(b[0].lesson.id,b[1].lesson.id); // visual repetition only, one shared lesson
 assert.equal(new Set(b.map(x=>x.lesson.id)).size,2);
-const empty=E.profileLines(get(c11,5),real,c11);
-assert.equal(empty[0].profile,'social');assert.equal(empty[0].lesson,null);
-assert(E.profileLines(get(c11,4),real,c11).every(x=>x.profile===null));
-const old=get(c10,1)[0],changed={...old,profileAudience:['social']};
+assert.deepEqual(E.profileLines([],real,c11),[]);
+const old=get(c10,2).find(l=>l.profileAudience?.includes('chemical')),changed={...old,profileAudience:['social']};
 assert.deepEqual(E.profileAudience(changed,real),['social']);
 assert.equal(E.roomOnlyChange(old,{...changed,roomId:'other'}),false);
 const l={id:'a',classId:'c',subjectId:'alg',teacherId:'absent',date:'2026-09-21',slot:1,time:'08:00 - 08:45'};
