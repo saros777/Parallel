@@ -3,10 +3,10 @@ const binary=path.resolve(process.argv[2]||''),temp=fs.mkdtempSync(path.join(os.
 (async()=>{let session,browser;try{
  for(let i=0;i<500;i++){if(fs.existsSync(path.join(temp,'data','session.json')))break;if(server.exitCode!==null)throw Error('Test server failed');await wait(20)}
  session=JSON.parse(fs.readFileSync(path.join(temp,'data','session.json')));browser=await chromium.launch({executablePath:process.env.CHROMIUM_PATH||'/usr/bin/chromium',args:['--no-sandbox']});const p=await browser.newPage({viewport:{width:1440,height:900}}),errors=[];p.on('pageerror',e=>{errors.push(e.message);console.error('PAGE',e.message)});
- await p.goto(session.url,{waitUntil:'networkidle'});await p.locator('.studio-matrix').waitFor();
+ await p.goto(session.url,{waitUntil:'networkidle'});await p.locator('.studio-matrix').waitFor();await p.waitForFunction(()=>projectInitialised&&!projectBusy&&!loading);
  assert.equal(await p.evaluate(()=>typeof window.docx),'undefined','Word library must not block startup');assert.equal(await p.evaluate(()=>typeof window.jspdf),'undefined','PDF library must not block startup');
  const originalLessons=await p.evaluate(()=>db.lessons.length),saved=path.join(temp,'original.parallel');
- async function download(action,file){const promise=p.waitForEvent('download');await action();const d=await promise;await d.saveAs(file);return fs.readFileSync(file)}
+ async function download(action,file){const promise=p.waitForEvent('download');await action();let d;try{d=await promise}catch(error){console.error('DOWNLOAD STATE',await p.evaluate(()=>({projectBusy,projectInitialised,loading,connected,dirty,saving,saveError,message:document.querySelector('#message')?.textContent})));throw error}await d.saveAs(file);return fs.readFileSync(file)}
  const raw=await download(()=>p.locator('#save-file').click(),saved);assert.equal(raw.subarray(0,2).toString(),'PK');assert(raw.length<2*1024*1024,'project file should compress the original annual data');await p.waitForFunction(()=>!projectBusy&&!projectModified);
  async function newBlank(name){await p.locator('#project-menu-button').click();await p.locator('[data-project-command="new"]').click();await p.locator('#project-new-name').fill(name);await p.locator('#project-copy-directories').uncheck();await p.locator('#dialog-action-1').click();await p.waitForFunction(n=>db.meta.projectName===n&&db.classes.length===0,name);await p.evaluate(()=>projectFlush())}
  await newBlank('Проверка файлов');assert.equal(await p.evaluate(()=>db.teachers.length),0);
