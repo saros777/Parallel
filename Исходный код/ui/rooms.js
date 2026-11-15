@@ -82,6 +82,7 @@ function showTeacherRooms(){
 }
 function attachRoomEditor(old){
  let automatic=old.roomMode!=='manual'&&settings.roomPolicy?.enabled;
+ const roomSelect=$('#edit-room'),selectedRoom=roomSelect.value;roomSelect.innerHTML=roomOptions(selectedRoom,'Нет');
  $('#edit-room').closest('label').insertAdjacentHTML('afterend','<label class="checkbox-line"><input id="edit-room-auto" type="checkbox">Кабинет автоматически по учителю</label><p id="room-explanation" class="hint full" role="status"></p>');
  $('#edit-room-auto').checked=!!automatic;
  function update(){
@@ -90,7 +91,7 @@ function attachRoomEditor(old){
   if(automatic)$('#edit-room').value=next.roomId||'';
   const others=E.effective(E.patchedDB(db,[{id:old.id,before:old,after:temp}])).filter(x=>x.id!==old.id&&!x.cancelled&&E.overlap(temp,x));
   [...$('#edit-room').options].forEach(o=>{
-   if(!o.value){o.textContent='Не указан';return}
+   if(!o.value){o.textContent='Нет';return}
    const r=lookup('rooms',o.value),busy=others.some(x=>x.roomId===o.value);
    o.textContent=(RoomAllocator.number(r?.name)||r?.name)+(busy?' · занят':' · свободен');
   });
