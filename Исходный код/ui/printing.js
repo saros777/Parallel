@@ -2,15 +2,16 @@
 showPrint=function(initialView){
  let prefs=PrintTools.preferences(settings.printLayout?.schema===2?settings.printLayout:PrintTools.defaults),drawTimer,allFit=false;
  if(initialView==='teachers'||initialView==='classes')prefs.view=initialView;
-  const printDate=date,screenClasses=selected(),dayRows=E.sortProfileRows(E.effective(typeof studioPeriod!=='undefined'&&route==='schedule'&&studioPeriod==='base'?studioContext():db).filter(l=>l.date===printDate&&!l.cancelled&&!l.parked),db);
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date()),screenClasses=selected();let printDate=today,dayRows=[];
+ const loadDay=()=>dayRows=E.sortProfileRows(E.effective(db).filter(l=>l.date===printDate&&!l.cancelled&&!l.parked),db);loadDay();
  let classes=[],rows=[],pageGroups=[];
  const checked=k=>prefs[k]?'checked':'';
- dialog('Печать A4 · версия 5.1',`<div class="print-presets">
+ dialog('Печать A4 · версия 5.4.3',`<div class="print-presets">
  <button data-print-preset="portrait"><strong>1. Книжный · 1 лист</strong><span>Все классы · предмет + номер</span></button>
  <button data-print-preset="sections"><strong>2. Книжный · крупнее</strong><span>По ступеням · до 3 листов</span></button>
  <button data-print-preset="landscape"><strong>3. Альбомный · 1 лист</strong><span>Дополнительный компактный вариант</span></button>
  </div><div class="print-workbench"><div class="print-options">
- <p class="print-selection" id="print-selection"></p>
+ <p class="print-selection" id="print-selection"></p><label class="field">Дата расписания<input id="print-date" type="date" value="${printDate}"></label>
  <label class="field">Строки расписания<select id="print-view"><option value="classes">Классы</option><option value="teachers">Учителя</option></select></label>
  <label class="field">Какие классы<select id="print-scope"><option value="all">Все классы школы</option><option value="selected">Только выбранные на экране</option></select></label>
  <label class="field">Лист A4<select id="paper-orientation"><option value="portrait">Книжная (вертикально)</option><option value="landscape">Альбомная</option></select></label>
@@ -36,7 +37,7 @@ showPrint=function(initialView){
    await document.fonts.ready;
    $('#print-fit-status').textContent='Готовлю PDF с фиксированным размером A4…';
    const doc=new jspdf.jsPDF({orientation:prefs.orientation,unit:'mm',format:'a4',compress:true});
-   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.1'});
+   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.3'});
    const width=(prefs.orientation==='portrait'?210:297)-prefs.margin*2;
    const sheets=$$('#paper-preview .print-compact-sheet');
    for(let i=0;i<sheets.length;i++){
@@ -68,6 +69,7 @@ showPrint=function(initialView){
  $('#dialog').addEventListener('close',()=>{clearTimeout(drawTimer);$('#dialog').classList.remove('print-dialog')},{once:true});
  function store(){settings.printLayout={...prefs};dirty=true;render()}
  function readControls(){
+  if($('#print-date')?.value&&$('#print-date').value!==printDate){printDate=$('#print-date').value;loadDay()}
   prefs=PrintTools.preferences({...prefs,view:$('#print-view').value,scope:$('#print-scope').value,orientation:$('#paper-orientation').value,margin:+$('#paper-margin').value,font:+$('#paper-font').value,fit:$('#paper-fit').checked,...Object.fromEntries($$('[data-print-field]').map(x=>[x.dataset.printField,x.checked]))});
   $$('[data-print-field]').forEach(x=>x.checked=prefs[x.dataset.printField]);
  }

@@ -1,6 +1,6 @@
 /* Full-window timetable editor. One click picks up, the next places; Escape cancels. */
 const SM=StudioModel;
-let studioPeriod='base',studioAxis='classes',studioPick=null,studioWork=null,studioRows=[],studioDates=[],studioEntities=[],studioSlots=8,studioFilters={bottom:'all',side:'all'},studioGhost=null;
+let studioPeriod='base',studioAxis='classes',studioPick=null,studioWork=null,studioRows=[],studioDates=[],studioEntities=[],studioSlots=8,studioFilters={bottom:{mode:'all',value:''},side:{mode:'all',value:''}},studioGhost=null,studioRedo=[];
 date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());
 let studioBottom=90,studioSide=160,studioResizeObserver=null;
 const studioFields=['classes','teachers','rooms','subjects','courses','groups','teacherSubjects','baseSchedule'];
@@ -9,11 +9,13 @@ editable=function(){return {...studioEditableBefore(),...Object.fromEntries(stud
 transact=function(label,fn){
  const before=editable();fn();const entry=ProjectModel.historyEntry(label,before,editable());
  if(!entry)return;
+ studioRedo=[];
  db.history.push(entry);if(db.history.length>200)db.history.splice(0,db.history.length-200);
  dirty=true;render();message(label+'.');
 };
 const studioUndoBefore=undo;
-undo=function(){const last=db.history.at(-1);if(!last)return;if(last.format!==2){if(last.before?.preferences)settings=structuredClone(last.before.preferences);studioCancel();studioUndoBefore();return}db.history.pop();ProjectModel.restoreHistory(db,last);if(last.values?.preferences)settings=structuredClone(db.preferences);studioCancel();dirty=true;render();message('Отменено: '+last.label+'.')};
+undo=function(){const last=db.history.at(-1);if(!last)return;if(last.format!==2){if(last.before?.preferences)settings=structuredClone(last.before.preferences);studioCancel();studioUndoBefore();return}db.history.pop();ProjectModel.restoreHistory(db,last);studioRedo.push(last);if(last.values?.preferences)settings=structuredClone(db.preferences);studioCancel();dirty=true;render();message('Отменено: '+last.label+'.')};
+function redo(){const entry=studioRedo.pop();if(!entry)return;ProjectModel.restoreHistory(db,entry,'after');db.history.push(entry);if(entry.values?.preferences)settings=structuredClone(db.preferences);studioCancel();dirty=true;render();message('Повторено: '+entry.label+'.')}
 stateMark=function(){return JSON.stringify([db.overrides,db.extraLessons,db.absences,db.history.length,settings,...studioFields.map(k=>db[k])])};
 const studioRenderBefore=render;
 render=function(){
@@ -22,11 +24,11 @@ render=function(){
  studioRenderBefore();
  if(route==='schedule'){$('#teacher-rooms')?.remove();$('#day-room-edit')?.remove();studioFit()}
 };
-function studioView(){return {subject:true,teacher:false,room:false,group:false,abbreviate:true,...settings.studioDisplay}}
+function studioView(){return {subject:true,className:true,teacher:false,room:true,group:false,abbreviate:true,...settings.studioDisplay}}
 function studioSubject(l){
  const s=lookup('subjects',l.subjectId);if(!studioView().abbreviate)return s?.name||'Предмет';
  if(settings.labels?.[l.subjectId])return settings.labels[l.subjectId];
- if(s?.studioEdited&&s.abbreviation)return s.abbreviation;
+ if(s?.abbreviation)return s.abbreviation;
  return wbLabel(l);
 }
 function studioGroup(l){
@@ -40,9 +42,11 @@ function studioBrief(l){return [lookup('classes',l.classId)?.name,lookup('subjec
 card=function(l){
  const v=studioView(),parts=[];
  if(v.subject&&['general','classes'].includes(studioAxis))parts.push(studioSubject(l));
- if(['teachers','rooms'].includes(studioAxis))parts.push(lookup('classes',l.classId)?.name||'—');
+ if(v.subject&&['teachers','rooms'].includes(studioAxis))parts.push(studioSubject(l));
+ if(v.className&&['teachers','rooms'].includes(studioAxis))parts.push(lookup('classes',l.classId)?.name||'—');
  if(studioAxis==='general'&&v.teacher)parts.push(studioTeacher(l.teacherId));
- if(studioAxis==='general'&&v.room)parts.push(l.roomId?PrintTools.roomNumber(roomName(l.roomId)):'—');
+ if(v.room&&studioAxis!=='rooms')parts.push(l.roomId?PrintTools.roomNumber(roomName(l.roomId)):'—');
+ if(v.teacher&&studioAxis==='rooms')parts.push(studioTeacher(l.teacherId));
  if(v.group&&studioGroup(l))parts.push(studioGroup(l));
  if(l.cycleWeeks===2)parts.push(l.cyclePhase?'II':'I');
  const color=lookup('teachers',l.teacherId)?.color||W.teacherColor(l.teacherId,db);
@@ -153,40 +157,53 @@ function studioHover(td){
  studioGhost?.classList.toggle('conflict',!!r.notes.length&&!r.blocked);
  if(studioGhost)studioGhost.querySelector('small').textContent=r.notes.join('; ')||'Клик — разместить';
 }
+function studioFilter(area){const current=studioFilters[area];return typeof current==='string'?studioFilters[area]={mode:current,value:''}:current}
+function studioFilterRows(area,rows){
+ const f=studioFilter(area),field=f.mode==='teacher'?'teacherId':f.mode==='subject'?'subjectId':'classId';
+ const filtered=f.mode==='all'||!f.value?rows:rows.filter(l=>l[field]===f.value);
+ return [...filtered].sort((a,b)=>String(lookup(f.mode==='teacher'?'teachers':f.mode==='subject'?'subjects':'classes',a[field])?.name||'').localeCompare(String(lookup(f.mode==='teacher'?'teachers':f.mode==='subject'?'subjects':'classes',b[field])?.name||''),'ru',{numeric:true})||a.slot-b.slot||a.date.localeCompare(b.date));
+}
 function studioTray(area,rows){
- const sort=studioFilters[area],key=sort==='teacher'?'teacherId':'classId';
- const items=[...rows].sort((a,b)=>sort==='all'?a.date.localeCompare(b.date)||a.slot-b.slot:String(lookup(key==='classId'?'classes':'teachers',a[key])?.name||'').localeCompare(String(lookup(key==='classId'?'classes':'teachers',b[key])?.name||''),'ru',{numeric:true}));
- return `<header><strong>${area==='side'?'Отсутствия / снятые':'Неразмещённые'} <span>${rows.length}</span></strong><select data-tray-sort="${area}" aria-label="Сортировка ${area==='side'?'отсутствий':'резерва'}"><option value="all" ${sort==='all'?'selected':''}>Все уроки</option><option value="class" ${sort==='class'?'selected':''}>По классу</option><option value="teacher" ${sort==='teacher'?'selected':''}>По учителю</option></select></header><div class="studio-tray-content">${area==='side'&&sort==='all'?`<div class="side-spacer"></div>${studioEntities.map(e=>`<div class="side-line">${items.filter(l=>l[studioAxis==='teachers'?'teacherId':studioAxis==='rooms'?'roomId':'classId']===e.id).map(card).join('')}</div>`).join('')}`:items.map(l=>`<div class="tray-item"><small>${h(sort==='teacher'?studioTeacher(l.teacherId):lookup('classes',l.classId)?.name)}${studioPeriod==='weeks'?' · '+h(fmt(l.date)):''}</small>${card(l)}</div>`).join('')||'<p class="hint">Кликните сюда с выбранной карточкой</p>'}</div>`;
+ const f=studioFilter(area),items=studioFilterRows(area,rows),choices=f.mode==='class'?db.classes:f.mode==='teacher'?db.teachers:f.mode==='subject'?db.subjects:[];
+ const label=l=>f.mode==='teacher'?studioTeacher(l.teacherId):f.mode==='subject'?(lookup('subjects',l.subjectId)?.name||'Предмет'):(lookup('classes',l.classId)?.name||'Класс');
+ return `<header><strong>${area==='side'?'Снятые':'Неразмещённые'} <span>${items.length}${items.length!==rows.length?' / '+rows.length:''}</span></strong><span class="tray-filters"><select data-tray-mode="${area}" aria-label="Группировка ${area==='side'?'снятых уроков':'резерва'}"><option value="all" ${f.mode==='all'?'selected':''}>Вся школа</option><option value="class" ${f.mode==='class'?'selected':''}>По классу</option><option value="teacher" ${f.mode==='teacher'?'selected':''}>По учителю</option><option value="subject" ${f.mode==='subject'?'selected':''}>По предмету</option></select>${choices.length?`<select data-tray-value="${area}" aria-label="Выбор для фильтра"><option value="">Все</option>${choices.map(x=>`<option value="${h(x.id)}" ${f.value===x.id?'selected':''}>${h(f.mode==='teacher'?studioTeacher(x.id):x.name)}</option>`).join('')}</select>`:''}</span></header><div class="studio-tray-content">${items.map(l=>`<div class="tray-item"><small>${h(label(l))}</small>${card(l)}</div>`).join('')||'<p class="hint">Нет карточек для выбранного фильтра</p>'}</div>`;
+}
+function studioFreeRooms(rows,d,slot){
+ const occupied=new Set(rows.filter(l=>!l.cancelled&&!l.parked&&!l.suspended&&l.date===d&&l.slot===slot&&l.roomId).map(l=>l.roomId));
+ const free=db.rooms.filter(r=>!occupied.has(r.id)).map(r=>PrintTools.roomNumber(r.name)||r.name).sort((a,b)=>a.localeCompare(b,'ru',{numeric:true}));
+ return {text:free.length?free.slice(0,6).join(', ')+(free.length>6?' +'+(free.length-6):''):'—',title:free.join(', ')||'Свободных кабинетов нет'};
 }
 renderSchedule=function(){
  mode='week';compact=true;grade='all';classFilter='';
  const week=studioPeriod==='base'?SM.anchor(db):monday(date);
  studioDates=Array.from({length:5},(_,i)=>E.addDays(week,i));
- studioWork=studioContext();studioRows=studioPeriod==='base'?E.effective(studioWork):E.effectiveBetween(studioWork,studioDates[0],studioDates[4]);
- studioRows=studioRows.filter(l=>studioDates.includes(l.date));
+ studioWork=studioContext();
+ const periodRows=(studioPeriod==='base'?E.effective(studioWork):E.effectiveBetween(studioWork,studioDates[0],studioDates[4])).filter(l=>studioDates.includes(l.date));
+ const carried=studioPeriod==='weeks'?[...new Map(E.effective(db).filter(l=>l.parkingArea==='side'&&!l.cancelled&&l.date<=studioDates[4]).map(l=>[String(l.id).split('@')[0],l])).values()]:[];
+ studioRows=[...new Map([...periodRows,...carried].map(l=>[l.id,l])).values()];
  studioWork={...studioWork,baseSchedule:null,lessons:studioRows,extraLessons:[],overrides:{}};
  const ids=new Set(selected().map(c=>c.id));
- const visible=studioRows.filter(l=>studioDates.includes(l.date)&&ids.has(l.classId)&&!l.cancelled);
- const side=visible.filter(l=>l.parkingArea==='side'||l.suspended);
- const bottom=visible.filter(l=>l.parked&&l.parkingArea!=='side');
- const rows=visible.filter(l=>!l.parked&&!l.suspended);
+ const current=periodRows.filter(l=>!l.cancelled),visible=current.filter(l=>ids.has(l.classId));
+ const side=[...new Map([...carried,...current.filter(l=>l.suspended)].map(l=>[l.id,l])).values()];
+ const bottom=current.filter(l=>l.parked&&l.parkingArea!=='side');
+ const rows=visible.filter(l=>!l.parked&&!l.suspended),roomRows=current.filter(l=>!l.parked&&!l.suspended);
  const type=studioAxis==='general'?'classes':studioAxis,key=type==='classes'?'classId':type==='teachers'?'teacherId':'roomId';
  studioEntities=type==='classes'?selected():db[type].filter(e=>visible.some(l=>l[key]===e.id));
  studioSlots=Math.max(8,...visible.map(l=>l.slot));
  const index=new Map();for(const l of rows){const k=[l[key],l.date,l.slot].join('|');if(!index.has(k))index.set(k,[]);index.get(k).push(l)}
  $('#heading-actions').innerHTML='';
- if(typeof studioCanReuseView!=='function'||!studioCanReuseView()) $('#controls').innerHTML=`<div class="studio-toolbar"><div class="segmented"><button data-period="base" class="${studioPeriod==='base'?'active':''}">Основное расписание</button><button data-period="weeks" class="${studioPeriod==='weeks'?'active':''}">По неделям</button></div>${studioPeriod==='weeks'?dateBar()+'<button id="studio-today">Сегодня</button>':''}<div class="segmented">${[['classes','Классы'],['teachers','Учителя'],['rooms','Кабинеты'],['general','Общее']].map(([k,n])=>`<button data-studio-axis="${k}" class="${studioAxis===k?'active':''}">${n}</button>`).join('')}</div><button id="class-choice">Выбор классов</button><button id="display-settings">Вид карточки</button><span class="spacer"></span><button id="studio-absence">Отсутствие</button><button id="studio-print">Печать</button><button id="studio-undo" ${db.history.length?'':'disabled'}>Отменить</button></div>`;
+ if(typeof studioCanReuseView!=='function'||!studioCanReuseView()) $('#controls').innerHTML=`<div class="studio-toolbar"><div class="segmented"><button data-period="base" class="${studioPeriod==='base'?'active':''}">Основное расписание</button><button data-period="weeks" class="${studioPeriod==='weeks'?'active':''}">По неделям</button></div>${studioPeriod==='weeks'?dateBar()+'<button id="studio-today">Сегодня</button>':''}<div class="segmented">${[['classes','Классы'],['teachers','Учителя'],['rooms','Кабинеты'],['general','Общее']].map(([k,n])=>`<button data-studio-axis="${k}" class="${studioAxis===k?'active':''}">${n}</button>`).join('')}</div><button id="class-choice">Выбор классов</button><button id="display-settings">Вид карточки</button><span class="spacer"></span><button id="studio-calculate">${studioPeriod==='base'?'Рассчитать основу':'Пересчитать день'}</button><button id="studio-absence">Отсутствие</button><button id="studio-print">Печать</button><button id="studio-undo" title="Отменить" aria-label="Отменить" ${db.history.length?'':'disabled'}>↶</button><button id="studio-redo" title="Повторить" aria-label="Повторить" ${studioRedo.length?'':'disabled'}>↷</button></div>`;
  const problems=E.conflicts(studioWork,rows),problemIds=new Set(problems.flatMap(x=>x.lessonIds));
- const paint={index,problemIds,problems,key,side,bottom};if(typeof studioUpdateExisting==='function'&&studioUpdateExisting(paint))return;
- $('#view').innerHTML=`<div class="studio-meta"><span>${studioPeriod==='base'?'Основа · изменения повторяются по неделям':fmt(studioDates[0])+' — '+fmt(studioDates[4])+' · исключения выбранной недели'} · ${studioEntities.length} строк</span><button id="studio-warnings">${problems.length} замечаний</button></div><div id="studio-workspace"><div class="studio-grid"><table class="studio-matrix"><colgroup><col class="entity-col">${studioDates.map(()=>Array.from({length:studioSlots},()=>'<col>').join('')).join('')}</colgroup><thead><tr><th rowspan="2">${type==='classes'?'Класс':type==='teachers'?'Учитель':'Кабинет'}</th>${studioDates.map(d=>`<th colspan="${studioSlots}">${days[SM.day(d)]}${studioPeriod==='weeks'?` <small>${fmt(d)}</small>`:''}</th>`).join('')}</tr><tr>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>`<th data-col-head="${d}|${i+1}">${i+1}</th>`).join('')).join('')}</tr></thead><tbody>${studioEntities.map(e=>`<tr><th data-row-head="${e.id}" title="${h(e.name)}">${h(type==='teachers'?studioTeacher(e.id):type==='rooms'?PrintTools.roomNumber(e.name):e.name)}</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const ls=E.sortProfileRows(index.get([e.id,d,i+1].join('|'))||[],db);return `<td data-entity="${e.id}" data-date="${d}" data-slot="${i+1}" tabindex="0" aria-label="${h(e.name)} ${days[SM.day(d)]} урок ${i+1}" class="${i===0?'day-start':''}"><div class="studio-stack" style="--parts:${Math.max(1,ls.length)}">${ls.map(l=>card({...l,placementForced:l.placementForced||problemIds.has(l.id)})).join('')}</div></td>`}).join('')).join('')}</tr>`).join('')}</tbody></table></div><div id="studio-v-split" role="separator" aria-label="Ширина правой области" aria-orientation="vertical" tabindex="0"></div><aside id="studio-side" class="studio-tray" data-park="side">${studioTray('side',side)}</aside><div id="studio-h-split" role="separator" aria-label="Высота нижней области" aria-orientation="horizontal" tabindex="0"></div><section id="studio-bottom" class="studio-tray" data-park="bottom">${studioTray('bottom',bottom)}</section></div><div id="studio-hint" role="status">Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить</div>`;
- $$('[data-period]').forEach(b=>b.onclick=()=>{studioCancel();studioPeriod=b.dataset.period;render()});
+ const paint={index,problemIds,problems,key,side,bottom,rows,roomRows};if(typeof studioUpdateExisting==='function'&&studioUpdateExisting(paint))return;
+ const freeFooter=['teachers','rooms'].includes(studioAxis)?`<tfoot><tr><th title="Свободные кабинеты">Своб.</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const free=studioFreeRooms(roomRows,d,i+1);return `<td title="${h(free.title)}">${h(free.text)}</td>`}).join('')).join('')}</tr></tfoot>`:'';
+ $('#view').innerHTML=`<div class="studio-meta"><span>${studioPeriod==='base'?'Основа · изменения повторяются по неделям':fmt(studioDates[0])+' — '+fmt(studioDates[4])+' · исключения выбранной недели'} · ${studioEntities.length} строк</span></div><div id="studio-workspace"><div class="studio-grid"><table class="studio-matrix"><colgroup><col class="entity-col">${studioDates.map(()=>Array.from({length:studioSlots},()=>'<col>').join('')).join('')}</colgroup><thead><tr><th rowspan="2">${type==='classes'?'Класс':type==='teachers'?'Учитель':'Кабинет'}</th>${studioDates.map(d=>`<th colspan="${studioSlots}">${days[SM.day(d)]}${studioPeriod==='weeks'?` <small>${fmt(d)}</small>`:''}</th>`).join('')}</tr><tr>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>`<th data-col-head="${d}|${i+1}">${i+1}</th>`).join('')).join('')}</tr></thead><tbody>${studioEntities.map(e=>`<tr><th data-row-head="${e.id}" title="${h(e.name)}">${h(type==='teachers'?studioTeacher(e.id):type==='rooms'?PrintTools.roomNumber(e.name):e.name)}</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const ls=E.sortProfileRows(index.get([e.id,d,i+1].join('|'))||[],db);return `<td data-entity="${e.id}" data-date="${d}" data-slot="${i+1}" tabindex="0" aria-label="${h(e.name)} ${days[SM.day(d)]} урок ${i+1}" class="${i===0?'day-start':''}"><div class="studio-stack" style="--parts:${Math.max(1,ls.length)}">${ls.map(l=>card({...l,placementForced:l.placementForced||problemIds.has(l.id)})).join('')}</div></td>`}).join('')).join('')}</tr>`).join('')}</tbody>${freeFooter}</table></div><div id="studio-v-split" role="separator" aria-label="Ширина правой области" aria-orientation="vertical" tabindex="0"></div><aside id="studio-side" class="studio-tray" data-park="side">${studioTray('side',side)}</aside><div id="studio-h-split" role="separator" aria-label="Высота нижней области" aria-orientation="horizontal" tabindex="0"></div><section id="studio-bottom" class="studio-tray" data-park="bottom">${studioTray('bottom',bottom)}</section></div><div id="studio-hint" role="status">Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить кабинет</div>`;
+ $$('[data-period]').forEach(b=>b.onclick=()=>{studioCancel();const next=b.dataset.period;if(next==='weeks'&&studioPeriod!=='weeks')date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());studioPeriod=next;render()});
  $$('[data-studio-axis]').forEach(b=>b.onclick=()=>{studioCancel();studioAxis=b.dataset.studioAxis;render()});
  if(studioPeriod==='weeks'){bindDateBar(7);$('#studio-today').onclick=()=>{date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());render()}}
  $('#class-choice').onclick=showClassChoice;$('#display-settings').onclick=showSettings;
  $('#studio-absence').onclick=()=>{if(studioPeriod==='base'){studioPeriod='weeks';date=SM.anchor(db);render()}showAbsence()};
- $('#studio-print').onclick=()=>{date=studioPeriod==='base'?SM.anchor(db):date;showPrint()};
- $('#studio-undo').onclick=undo;$('#studio-warnings').onclick=()=>setRoute('conflicts');
- $$('[data-tray-sort]').forEach(s=>s.onchange=()=>{studioFilters[s.dataset.traySort]=s.value;render()});
+ $('#studio-print').onclick=()=>showPrint();$('#studio-calculate').onclick=()=>studioPeriod==='base'?showBaseGenerator():showRebuild();
+ $('#studio-undo').onclick=undo;$('#studio-redo').onclick=redo;studioBindTrayFilters();
  if(typeof studioRememberCells==='function')studioRememberCells(paint);bindCards();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
 };
 bindCards=function(){
@@ -196,7 +213,7 @@ bindCards=function(){
  $$('[data-lesson]').forEach(b=>{
   b.draggable=false;
   b.onclick=e=>{if(studioPick){if(b.closest('td'))return; e.stopPropagation();if(b.dataset.lesson===studioPick.id)studioCancel();else studioPark(b.closest('[data-park]').dataset.park);return}e.stopPropagation();if(e.detail>0)studioPointer={x:e.clientX,y:e.clientY};else{const r=b.getBoundingClientRect();studioPointer={x:r.left+r.width/2,y:r.top+r.height/2}}studioTake(b.dataset.lesson)};
-  b.oncontextmenu=e=>{e.preventDefault();studioCancel();showLesson(b.dataset.lesson)};
+  b.oncontextmenu=e=>{e.preventDefault();studioCancel();if(['teachers','rooms'].includes(studioAxis))studioRoomEditor(b.dataset.lesson);else showLesson(b.dataset.lesson)};
  });
  $$('[data-entity]').forEach(td=>{
   td.onclick=()=>{if(studioPick)studioPlace(td)};
@@ -206,11 +223,19 @@ bindCards=function(){
  });
  $$('[data-park]').forEach(t=>t.onclick=e=>{if(!e.target.closest('select,button')&&studioPick)studioPark(t.dataset.park)});
 };
+function studioBindTrayFilters(){
+ $$('[data-tray-mode]').forEach(s=>s.onchange=()=>{studioFilters[s.dataset.trayMode]={mode:s.value,value:''};render()});
+ $$('[data-tray-value]').forEach(s=>s.onchange=()=>{studioFilter(s.dataset.trayValue).value=s.value;render()});
+}
+function studioRoomEditor(id){
+ const old=studioRows.find(l=>l.id===id);if(!old)return;
+ dialog('Кабинет · '+studioBrief(old),`<label class="field">Назначение кабинета<select id="studio-quick-room"><option value="">Подобрать автоматически</option>${db.rooms.map(r=>`<option value="${h(r.id)}" ${old.roomId===r.id&&old.roomMode==='manual'?'selected':''}>${h(PrintTools.roomNumber(r.name)||r.name)}</option>`).join('')}</select></label><p class="hint">Ручной кабинет относится к этой карточке и имеет приоритет над правилами учителя. Автоматический выбор пересчитается с учётом занятости.</p>`,[{text:'Полное редактирование',action:()=>showLesson(id)},{text:'Сохранить кабинет',class:'primary',action:()=>{const roomId=$('#studio-quick-room').value||null;studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:roomId?'manual':'auto'}}])}}]);
+}
 function studioFit(){
  const workspace=$('#studio-workspace');if(!workspace)return;
  workspace.style.setProperty('--side-width',studioSide+'px');workspace.style.setProperty('--bottom-height',studioBottom+'px');
- const grid=$('.studio-grid'),n=Math.max(1,studioEntities.length),rowHeight=Math.max(1,(grid.clientHeight-38-n)/n);
- workspace.style.setProperty('--row-height',rowHeight+'px');
+ const grid=$('.studio-grid'),n=Math.max(1,studioEntities.length),footer=['teachers','rooms'].includes(studioAxis)?18:0,rowHeight=Math.max(1,(grid.clientHeight-38-footer-n)/n);
+ workspace.style.setProperty('--row-height',rowHeight+'px');workspace.style.setProperty('--footer-height',footer+'px');
  const colWidth=Math.max(1,(grid.clientWidth-(studioAxis==='teachers'?110:44))/(studioSlots*5));
  workspace.style.setProperty('--card-width',colWidth+'px');workspace.style.setProperty('--card-height',Math.max(7,Math.min(24,rowHeight))+'px');
  workspace.style.setProperty('--card-font',Math.max(6,Math.min(12,colWidth/3.2,rowHeight*.65))+'px');
@@ -231,8 +256,16 @@ function studioBindSplit(){
   el.onkeydown=e=>{if(!e.key.startsWith('Arrow'))return;e.preventDefault();if(kind==='side')studioSide=Math.max(60,studioSide+(e.key==='ArrowLeft'?10:-10));else studioBottom=Math.max(40,studioBottom+(e.key==='ArrowUp'?10:-10));settings.studioLayout={side:studioSide,bottom:studioBottom};studioFit();dirty=true;persist()};
  }
 }
+function showBaseGenerator(){
+ const count=SM.template(db).filter(l=>l.parked&&!l.cancelled&&selected().some(c=>c.id===l.classId)).length;
+ dialog('Расчёт основного расписания',`<p>В нижней области для выбранных классов: <strong>${count}</strong> неразмещённых карточек.</p><label class="field">Максимальный номер урока<input id="base-max-slot" type="number" min="4" max="12" value="8"></label><p class="hint">Будут рассчитаны три безопасных варианта. Учитываются занятость классов и учителей, рабочие дни, разрешённые уроки, подгруппы, спарки и правила кабинетов. Закреплённые и уже размещённые карточки сохраняются. Результат применяется только после выбора.</p>`,[{text:'Рассчитать варианты',class:'primary',action:()=>{
+  const maxSlot=+$('#base-max-slot').value;if(!Number.isInteger(maxSlot)||maxSlot<4||maxSlot>12){message('Максимальный урок: от 4 до 12.');return}
+  const labels={balanced:'Сбалансированный',compact:'Компактнее для классов',teachers:'Меньше окон учителей',emergency:'Аварийный: допустить спарку учителя'},results=['balanced','compact','teachers','emergency'].map(strategy=>E.generateBase(db,SM.template(db),{classIds:selected().map(c=>c.id),maxSlot,strategy}));
+  $('#dialog').close();dialog('Варианты основного расписания',`<p>Выберите вариант. Все изменения можно отменить одной стрелкой «Назад».</p><div class="generator-variants">${results.map((r,i)=>`<label><input type="radio" name="base-variant" value="${i}" ${i===0?'checked':''}><strong>${labels[r.strategy]}</strong><span>${r.patches.length} размещено · ${r.unresolved.length} не размещено${r.strategy==='emergency'?' · конфликты будут отмечены':''}</span></label>`).join('')}</div><div class="table-wrap"><table class="data-table"><thead><tr><th>Класс</th><th>Предмет</th><th>Предложение</th></tr></thead><tbody>${results[0].patches.slice(0,80).map(p=>`<tr><td>${h(lookup('classes',p.after.classId)?.name)}</td><td>${h(studioSubject(p.after))}</td><td>${days[SM.day(p.after.date)]}, урок ${p.after.slot}</td></tr>`).join('')}</tbody></table></div><p class="hint">Аварийный вариант выбирайте только как крайний: он допускает одновременные карточки одного учителя, но не пересечения классов. В таблице показаны первые 80 назначений.</p>`,[{text:'Не применять',action:()=>$('#dialog').close()},{text:'Применить выбранный вариант',class:'primary',action:()=>{const r=results[+$('input[name="base-variant"]:checked').value];if(!r.patches.length){message('Для выбранного варианта нет применимых изменений.');return}studioApply('Расчёт основного расписания: '+labels[r.strategy],r.patches,r.strategy==='emergency')}}]);
+ }}]);
+}
 showSettings=function(){
- const v=studioView();dialog('Вид карточки',`<p>В режиме «Общее» выберите содержимое. «Классы» показывают предмет, «Учителя» и «Кабинеты» — классы. Сокращения и подгруппы действуют во всех режимах.</p><div class="form-grid">${[['subject','Предмет'],['teacher','Учитель: фамилия и инициалы'],['room','Номер кабинета'],['group','Подгруппа / профиль'],['abbreviate','Сокращения предметов']].map(([k,n])=>`<label class="checkbox-line"><input type="checkbox" data-studio-field="${k}" ${v[k]?'checked':''}>${n}</label>`).join('')}</div>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Применить',class:'primary',action:()=>{settings.studioDisplay=Object.fromEntries($$('[data-studio-field]').map(e=>[e.dataset.studioField,e.checked]));$('#dialog').close();dirty=true;render()}}]);
+ const v=studioView();dialog('Вид карточки',`<p>Настройки применяются к экрану и печати. В режиме классов удобно оставить предмет и кабинет; в режиме учителей можно добавить предмет, класс и кабинет.</p><div class="form-grid">${[['subject','Предмет'],['className','Класс'],['teacher','Учитель: фамилия и инициалы'],['room','Номер кабинета'],['group','Подгруппа / профиль'],['abbreviate','Сокращения предметов']].map(([k,n])=>`<label class="checkbox-line"><input type="checkbox" data-studio-field="${k}" ${v[k]?'checked':''}>${n}</label>`).join('')}</div>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Применить',class:'primary',action:()=>{settings.studioDisplay=Object.fromEntries($$('[data-studio-field]').map(e=>[e.dataset.studioField,e.checked]));settings.printLayout={...settings.printLayout,subject:$('#dialog [data-studio-field="subject"]').checked,className:$('#dialog [data-studio-field="className"]').checked,room:$('#dialog [data-studio-field="room"]').checked,teacher:$('#dialog [data-studio-field="teacher"]').checked,group:$('#dialog [data-studio-field="group"]').checked,abbreviate:$('#dialog [data-studio-field="abbreviate"]').checked};$('#dialog').close();dirty=true;render()}}]);
 };
 const studioOldLesson=showLesson;
 showLesson=function(id,initial){

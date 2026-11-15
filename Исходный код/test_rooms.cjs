@@ -13,6 +13,8 @@ d=fixture();d.overrides.b={cancelled:true};d.overrides.a={teacherId:'t4',roomMod
 assert.equal(E.effective(d)[0].roomId,'r2','replacement home room');
 d=fixture();d.lessons[1]={...d.lessons[1],slot:2,time:'08:30 - 09:15'};d.preferences.roomPolicy.teacherRooms.t2='r1';
 rows=E.effective(d);assert.equal(rows[0].roomId,rows[1].roomId,'different numbered slots remain free regardless of bell text');
+d=fixture();d.lessons=[lesson('a','t1',1),lesson('a2','t1',2),lesson('b','t2',1)];d.preferences.roomPolicy.teacherRules={t1:{mode:'preferred',rooms:['r1','r2'],forbidden:['r3']},t2:{mode:'fixed',rooms:['r1'],forbidden:[]}};
+rows=E.effective(d);assert.equal(rows.find(x=>x.id==='a').roomId,'r2');assert.equal(rows.find(x=>x.id==='a2').roomId,'r2','teacher stays in the same room when possible');assert.notEqual(rows.find(x=>x.id==='a').roomId,'r3','forbidden room excluded');
 d=fixture();d.preferences.roomPolicy.pool=['r1'];d.preferences.roomPolicy.teacherRooms={};
 rows=E.effective(d);assert.equal(rows.filter(x=>!x.roomId).length,2);assert.equal(E.conflicts(d,rows).filter(x=>x.kind==='Нет свободного кабинета').length,2);
 d=fixture();d.lessons[1].groupName='1';d.lessons[2].groupName='2';d.lessons[2].classId='b';rows=E.effective(d);

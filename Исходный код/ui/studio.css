@@ -25,16 +25,16 @@
 .studio-matrix td.day-start{border-left:2px solid #90a6bc}
 .studio-stack{display:flex;flex-direction:column;height:var(--row-height);max-height:var(--row-height);overflow:hidden;gap:0}
 .studio-card.lesson{display:block!important;background:var(--subject-color)!important;color:#172c44!important;border:0;border-radius:0;box-shadow:none;margin:0!important;padding:0 1px!important;width:100%;min-width:0;min-height:0!important;max-height:100%;height:calc(100% / var(--parts,1));flex:1 1 0;overflow:hidden;text-overflow:clip;white-space:nowrap;font-size:inherit!important;line-height:1!important;text-align:left;font-weight:400}
-.studio-card.lesson.forced{box-shadow:inset 2px 0 #bc2340}.studio-card.lesson.picked{outline:2px dashed #245acf;outline-offset:-2px;opacity:1}
+.studio-card.lesson.forced{box-shadow:none}.studio-card.lesson.picked{outline:2px dashed #245acf;outline-offset:-2px;opacity:1}
 .studio-matrix th.target-ok{background:#c3ead6;color:#124e2e}.studio-matrix th.target-bad{background:#f7c5cd;color:#881f31}.studio-matrix th.target-block{background:#ccd1d8;color:#555}
 .studio-matrix td:focus-visible{outline:2px solid #255ece;outline-offset:-2px}
 .studio-tray{border:1px solid var(--line);background:var(--surface);min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
 .studio-tray>header{display:flex;align-items:center;gap:6px;justify-content:space-between;flex-shrink:0;padding:3px 5px;min-height:30px;height:30px;border-bottom:1px solid var(--line);font-size:11px}
-.studio-tray>header select{min-height:23px;height:23px;font-size:10px;padding:0 2px;max-width:100px}.studio-tray>header strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.studio-tray>header select{min-height:23px;height:23px;font-size:10px;padding:0 2px;max-width:125px}.studio-tray>header strong{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.tray-filters{display:flex;gap:3px;min-width:0}.tray-filters select{min-width:0}
 .studio-tray-content{overflow:auto;min-height:0;display:flex;align-content:flex-start;align-items:flex-start;flex-wrap:wrap;gap:4px;padding:4px}
 .studio-tray .studio-card{width:var(--card-width);height:var(--card-height);font-size:var(--card-font)!important;flex:none}.tray-item{display:flex;flex-direction:column;gap:2px}.tray-item small{max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}
-#studio-side .studio-tray-content:has(.side-line){display:block;padding:0;overflow-x:hidden}.side-spacer{height:6px}.side-line{height:calc(var(--row-height) + 1px);display:flex;gap:1px;align-items:stretch;border-bottom:1px solid var(--line);overflow:auto}.side-line .studio-card{height:100%;flex-shrink:0}
-#studio-side>header{flex-wrap:wrap;height:30px;padding:0 3px;font-size:9px;gap:0}#studio-side>header select{max-width:75px;font-size:9px}
+#studio-side .studio-tray-content{align-content:flex-start}.side-spacer{height:6px}.side-line{height:calc(var(--row-height) + 1px);display:flex;gap:1px;align-items:stretch;border-bottom:1px solid var(--line);overflow:auto}.side-line .studio-card{height:100%;flex-shrink:0}
+#studio-side>header{height:auto;min-height:30px;padding:2px 3px;font-size:9px;gap:2px;align-items:flex-start;flex-direction:column}#studio-side>header .tray-filters{width:100%;flex-direction:column}#studio-side>header select{max-width:none;width:100%;font-size:9px}
 #studio-bottom{grid-column:1/4}#studio-v-split{cursor:col-resize;touch-action:none}#studio-h-split{grid-column:1/4;cursor:row-resize;touch-action:none}
 #studio-v-split:hover,#studio-h-split:hover,#studio-v-split:focus-visible,#studio-h-split:focus-visible{background:#8faad4;outline:0}
 #studio-hint{height:18px;min-height:18px;font-size:10px;color:var(--muted);overflow:hidden;white-space:nowrap;text-overflow:ellipsis;padding-top:3px}
@@ -48,6 +48,7 @@
 /* The class/teacher grid uses the same occupancy calculation as placement. */
 .studio-card.lesson{display:flex!important;align-items:center;justify-content:center;text-align:center;font-size:var(--studio-font,var(--card-font,12px))!important;font-weight:400;line-height:1!important}
 .studio-tray .studio-card{font-size:var(--studio-font,var(--card-font,12px))!important}
+.studio-matrix tfoot{height:var(--footer-height,0px)}.studio-matrix tfoot th,.studio-matrix tfoot td{height:var(--footer-height,0px);font-size:7px;line-height:1;white-space:nowrap;text-overflow:ellipsis;background:#eef4fa;color:#40566d;overflow:hidden;text-align:center}
 #studio-popover{position:fixed;z-index:2000;width:300px;max-width:calc(100vw - 12px);background:var(--surface);color:var(--text);border:1px solid #bd6370;border-radius:6px;box-shadow:0 5px 20px #0003;font-size:12px;padding:8px}
 #studio-popover header{display:flex;align-items:center;justify-content:space-between;gap:8px}
 #studio-popover header button{min-height:20px;height:20px;width:22px;padding:0;font-size:15px}

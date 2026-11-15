@@ -126,10 +126,10 @@ $('#file').onchange=async e=>{
  return projectTask(async()=>{try{await projectFlush();if(!await projectConfirm())return;const bytes=new Uint8Array(await file.arrayBuffer()),r=await fetch('/api/project/read',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({data:ParallelWire.toBase64(bytes)})}),result=await r.json();if(!r.ok)throw Error(result.error);projectAdopt(normalize(result.state),{name:file.name,modified:false});dirty=true;await persist();message('Открыто: '+file.name)}catch(error){message('Импорт не выполнен: '+error.message)}finally{e.target.value=''}});
 };
 document.addEventListener('keydown',e=>{
- if(!(e.ctrlKey||e.metaKey)||!['s','o','n'].includes(e.key.toLowerCase()))return;
+ if(!(e.ctrlKey||e.metaKey)||!['s','o','n','z','y'].includes(e.key.toLowerCase()))return;
  e.preventDefault();e.stopImmediatePropagation();projectCloseMenu();const key=e.key.toLowerCase();
  if($('#dialog').open){if(key==='s'&&!e.shiftKey)$('#dialog .dialog-footer .primary')?.click();else message('Завершите редактирование текущей карточки.');return}
- if(key==='s')projectSave(e.shiftKey);if(key==='o')projectOpen();if(key==='n')projectNew();
+ if(key==='s')projectSave(e.shiftKey);if(key==='o')projectOpen();if(key==='n')projectNew();if(key==='z')(e.shiftKey&&typeof redo==='function'?redo:undo)();if(key==='y'&&typeof redo==='function')redo();
 },true);
 async function projectWriteBook(book,format){
  const native=projectNative();if(native)return native.WriteSpreadsheet(JSON.stringify(book),format);

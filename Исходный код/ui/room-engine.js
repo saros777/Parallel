@@ -42,15 +42,17 @@
   const cached=cache.get(db);
   if(cached?.key===key&&cached.lessons===db.lessons&&cached.rooms===db.rooms)return cached.rows.map(l=>({...l}));
   const roomIds=new Set(db.rooms.map(r=>r.id)),pool=(policy.pool||[]).filter(r=>roomIds.has(r)),home=policy.teacherRooms||{};
-  const rule=l=>policy.teacherRules?.[l.teacherId]||{mode:'preferred',rooms:home[l.teacherId]?[home[l.teacherId]]:[]};
+  const rule=l=>policy.teacherRules?.[l.teacherId]||{mode:'preferred',rooms:home[l.teacherId]?[home[l.teacherId]]:[],forbidden:[]};
   const preferred=l=>[...new Set([...(rule(l).rooms||[]),...(policy.classRooms?.[l.classId]||[])])].filter(r=>roomIds.has(r));
+  const allowed=(r,l)=>roomIds.has(r)&&!(rule(l).forbidden||[]).includes(r);
   const manual=l=>l.roomMode==='manual'||(l.roomMode!=='auto'&&Object.hasOwn(db.overrides?.[l.id]||{},'roomId'));
   const rows=raw.map(l=>({...l,roomMode:manual(l)?'manual':'auto'}));
   const byDay=new Map();
   for(const l of rows){if(!byDay.has(l.date))byDay.set(l.date,[]);byDay.get(l.date).push(l)}
   for(const lessons of byDay.values()){
    const occupied=new Map();
-   const reserve=l=>{if(!l.cancelled&&!l.parked&&!l.suspended&&l.roomId){if(!occupied.has(l.roomId))occupied.set(l.roomId,[]);occupied.get(l.roomId).push(l)}};
+   const teacherDayRooms=new Map();
+   const reserve=l=>{if(!l.cancelled&&!l.parked&&!l.suspended&&l.roomId){if(!occupied.has(l.roomId))occupied.set(l.roomId,[]);occupied.get(l.roomId).push(l);if(l.teacherId){if(!teacherDayRooms.has(l.teacherId))teacherDayRooms.set(l.teacherId,[]);teacherDayRooms.get(l.teacherId).push({slot:l.slot,roomId:l.roomId})}}};
    const free=(r,l)=>!(occupied.get(r)||[]).some(x=>root.ScheduleEngine.overlap(x,l));
    for(const l of lessons.filter(x=>x.roomMode==='manual'))reserve(l);
    const automatic=lessons.filter(x=>x.roomMode==='auto').sort((a,b)=>Number(rule(b).mode==='fixed')-Number(rule(a).mode==='fixed')||Number(!preferred(a).length)-Number(!preferred(b).length)||a.slot-b.slot||String(a.id).localeCompare(String(b.id),'en',{numeric:true}));
@@ -64,12 +66,13 @@
      l.roomId=roomIds.has(rule(l).rooms?.[0])?rule(l).rooms[0]:null;
      l.roomReason=l.roomId?(free(l.roomId,l)?'Жёсткое закрепление за учителем':'Жёсткое закрепление: кабинет занят, требуется решение'):'Жёсткое закрепление: кабинет не задан';
      reserve(l);
-    }else if(first&&free(first,l)){l.roomId=first;l.roomReason=(rule(l).rooms||[]).includes(first)?'Предпочтение учителя №1':'Предпочтение класса №1';reserve(l)}
-    else fallback.push(l);
+    }else fallback.push(l);
    }
    for(const l of fallback){
-    const choices=[...new Set([...preferred(l),...pool])];
-    l.roomId=choices.find(r=>free(r,l))||null;
+    const teacherPreferred=rule(l).rooms||[],classPreferred=policy.classRooms?.[l.classId]||[],near=(teacherDayRooms.get(l.teacherId)||[]).sort((a,b)=>Math.abs(a.slot-l.slot)-Math.abs(b.slot-l.slot))[0]?.roomId;
+    const choices=[...new Set([...teacherPreferred,...classPreferred,...pool])].filter(r=>allowed(r,l)&&free(r,l));
+    const score=r=>(r===near?-10000:0)+(teacherPreferred.includes(r)?teacherPreferred.indexOf(r)*10:classPreferred.includes(r)?200+classPreferred.indexOf(r)*10:1000);
+    l.roomId=choices.sort((a,b)=>score(a)-score(b))[0]||null;
     if(l.roomId){const tr=rule(l).rooms||[],cr=policy.classRooms?.[l.classId]||[];l.roomReason=tr.includes(l.roomId)?'Предпочтение учителя №'+(tr.indexOf(l.roomId)+1):cr.includes(l.roomId)?'Предпочтение класса №'+(cr.indexOf(l.roomId)+1):'Выбран свободный кабинет';reserve(l)}
    }
   }

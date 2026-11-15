@@ -2,7 +2,7 @@
 const compactDefaults={subject:true,room:true,teacher:false,group:false,abbreviate:true};
 function displaySubject(l,abbreviate=true){
  const s=lookup('subjects',l.subjectId);
- return (abbreviate?(settings.labels?.[l.subjectId]||compactNames.find(([re])=>re.test(s?.name||''))?.[1]||s?.abbreviation):null)||s?.name||'Неизвестный предмет';
+ return (abbreviate?(settings.labels?.[l.subjectId]||s?.abbreviation||compactNames.find(([re])=>re.test(s?.name||''))?.[1]):null)||s?.name||'Неизвестный предмет';
 }
 function profileBadges(l){
  const profiles=E.classProfiles(l,db),audience=E.profileAudience(l,db);

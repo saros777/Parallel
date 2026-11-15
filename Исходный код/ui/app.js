@@ -250,8 +250,8 @@ function renderDirectory(){
  $$('[data-label]').forEach(b=>b.onclick=()=>{const sub=lookup('subjects',b.dataset.label);dialog('Сокращение предмета',`<p>${h(sub.name)}</p><label class="field">Отображаемое сокращение<input type="text" id="subject-label" value="${h(settings.labels[sub.id]||sub.abbreviation||sub.name)}"></label><p class="hint">Меняется только локальная подпись. Название в ВШ не меняется.</p>`,[{text:'Сохранить',class:'primary',action:()=>{settings.labels[sub.id]=$('#subject-label').value.trim()||sub.name;dirty=true;$('#dialog').close();render()}}])});
 }
 function renderHistory(){
- $('#heading-actions').innerHTML=`<button id="undo" ${db.history.length?'':'disabled'}>Отменить последнее действие</button>`;
- $('#undo').onclick=undo;
+ $('#heading-actions').innerHTML=`<button id="undo" ${db.history.length?'':'disabled'}>↶ Отменить</button><button id="redo" ${typeof studioRedo!=='undefined'&&studioRedo.length?'':'disabled'}>↷ Повторить</button>`;
+ $('#undo').onclick=undo;$('#redo').onclick=()=>typeof redo==='function'&&redo();
  $('#view').innerHTML=db.history.length?`<div class="table-wrap"><table class="data-table"><thead><tr><th>Время</th><th>Действие</th><th>Изменений</th></tr></thead><tbody>${db.history.slice().reverse().map(x=>`<tr><td>${h(new Date(x.at).toLocaleString('ru-RU'))}</td><td>${h(x.label)}</td><td>${x.format===2?x.changes.length+Object.keys(x.values||{}).length:Object.keys(x.after?.overrides||{}).length}</td></tr>`).join('')}</tbody></table></div><p class="summary-note">История последних 200 действий сохраняется внутри рабочего файла. Отмена применяется в обратном порядке; она не отправляется в ВШ.</p>`:'<div class="empty-state"><h2>Исходное расписание без изменений</h2><p>Здесь появятся замены, отмены, переносы и записи отсутствий, сделанные в рабочей копии.</p></div>';
 }
 function renderData(){

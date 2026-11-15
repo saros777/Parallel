@@ -7,8 +7,8 @@
 #studio-ghost{width:var(--ghost-width,44px)!important;height:var(--ghost-height,22px)!important;max-width:none;opacity:1;padding:0!important;pointer-events:none;will-change:transform;left:0!important;top:0!important;box-shadow:0 2px 6px #0003;background:transparent!important;border:0!important}#studio-ghost .studio-card{width:var(--ghost-width,44px)!important;height:var(--ghost-height,22px)!important;font-size:var(--ghost-font,12px)!important;border:1px solid #405675!important}#studio-ghost small{display:none;position:absolute;left:8px;top:100%;width:210px;padding:5px;background:#fff0f2;border:1px solid #d88b98;border-radius:4px;margin-top:4px}#studio-ghost.conflict small{display:block}
 @media(max-width:1000px){#project-name{max-width:140px}.teacher-workspace{grid-template-columns:230px minmax(400px,1fr)}}
 @supports (container-type:size){
- .studio-matrix{display:grid;grid-template-columns:var(--entity-width,44px) repeat(var(--columns,40),minmax(0,1fr));grid-template-rows:18px 18px repeat(var(--rows,25),minmax(0,1fr));align-items:stretch}
- .studio-matrix colgroup{display:none}.studio-matrix thead,.studio-matrix tbody,.studio-matrix tr{display:contents}
+ .studio-matrix{display:grid;grid-template-columns:var(--entity-width,44px) repeat(var(--columns,40),minmax(0,1fr));grid-template-rows:18px 18px repeat(var(--rows,25),minmax(0,1fr)) var(--footer-height,0px);align-items:stretch}
+ .studio-matrix colgroup{display:none}.studio-matrix thead,.studio-matrix tbody,.studio-matrix tfoot,.studio-matrix tr{display:contents}
  .studio-matrix thead tr:first-child th:first-child{grid-row:span 2}.studio-matrix thead tr:first-child th:not(:first-child){grid-column:span var(--slots,8)}
  .studio-matrix th,.studio-matrix td{min-width:0;min-height:0;border:0;border-right:1px solid var(--line);border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:center}
  .studio-matrix td.day-start{border-left:2px solid #90a6bc}.studio-matrix thead th{display:block;padding-top:2px}.studio-matrix tbody th{white-space:nowrap;overflow:hidden}

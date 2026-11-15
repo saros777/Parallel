@@ -174,6 +174,35 @@ function rebuild(db,date,classIds){
  }
  return proposals;
 }
+function generateBase(db,template,options={}){
+ const ids=new Set(options.classIds||db.classes.map(c=>c.id)),maxSlot=Math.max(1,Math.min(12,+options.maxSlot||8)),strategy=options.strategy||'balanced';
+ const rows=template.map(l=>({...l})),placed=rows.filter(l=>!l.cancelled&&!l.parked),parked=rows.filter(l=>!l.cancelled&&l.parked&&ids.has(l.classId)),groups=[],seen=new Set(),unresolved=[];
+ const baseDate=rows.map(l=>l.date).sort()[0]||new Date().toISOString().slice(0,10),baseMonday=addDays(baseDate,-((new Date(baseDate+'T12:00:00Z').getUTCDay()+6)%7)),dates=Array.from({length:5},(_,i)=>addDays(baseMonday,i));
+ for(const lesson of parked){if(seen.has(lesson.id))continue;const block=lesson.blockId?parked.filter(l=>l.blockId===lesson.blockId):[lesson];block.forEach(l=>seen.add(l.id));groups.push(block.sort((a,b)=>(a.blockOffset||0)-(b.blockOffset||0)))}
+ const teacher=id=>db.teachers.find(t=>t.id===id),allowed=l=>{const t=teacher(l.teacherId),day=new Date(l.date+'T12:00:00Z').getUTCDay();return (!t?.workDays?.length||t.workDays.includes(day))&&(!t?.allowedSlots?.length||t.allowedSlots.includes(l.slot))&&(!t?.availability||t.availability[day]?.includes(l.slot))};
+ const gapCount=(key,id,date,list)=>{const slots=[...new Set(list.filter(l=>!l.cancelled&&!l.parked&&l[key]===id&&l.date===date).map(l=>l.slot))].sort((a,b)=>a-b);return slots.length?slots.at(-1)-slots[0]+1-slots.length:0};
+ const score=(trial,list)=>{
+  const first=trial[0],classGaps=gapCount('classId',first.classId,first.date,list),teacherIds=[...new Set(trial.map(l=>l.teacherId).filter(Boolean))],teacherGaps=teacherIds.reduce((n,id)=>n+gapCount('teacherId',id,first.date,list),0),same=list.filter(l=>l.classId===first.classId&&l.date===first.date&&l.subjectId===first.subjectId).length,late=Math.max(...trial.map(l=>l.slot));
+  if(strategy==='compact')return classGaps*80+teacherGaps*15+late*5+same*8;
+  if(strategy==='teachers')return teacherGaps*90+classGaps*25+late*3+same*8;
+  return classGaps*55+teacherGaps*45+late*4+same*8;
+ };
+ groups.sort((a,b)=>{const ta=teacher(a[0].teacherId),tb=teacher(b[0].teacherId),ca=(ta?.allowedSlots?.length||maxSlot)*(ta?.workDays?.length||5),cb=(tb?.allowedSlots?.length||maxSlot)*(tb?.workDays?.length||5);return ca-cb||b.length-a.length});
+ const patches=[];
+ for(const block of groups){let best=null;
+  for(const d of dates)for(let slot=1;slot+block.length-1<=maxSlot;slot++){
+   const trial=block.map((l,i)=>({...l,date:d,slot:slot+i,parked:false,parkingArea:null,roomId:l.roomMode==='manual'?l.roomId:null,...slotInfo(db,l.classId,d,slot+i)}));
+   if(trial.some(l=>!allowed(l)))continue;
+   const issues=trial.flatMap((l,i)=>[...placed,...trial.slice(i+1)].flatMap(x=>pairIssues(l,x,db)));
+   if(issues.length&&(strategy!=='emergency'||issues.some(x=>x!=='Учитель занят одновременно')))continue;
+   const list=[...placed,...trial],value=score(trial,list)+issues.length*2500;if(!best||value<best.value)best={trial,value};
+  }
+  if(!best){unresolved.push({...block[0],reason:'Нет места без пересечения и нарушения ограничений'});continue}
+  block.forEach((l,i)=>{const after=best.trial[i];patches.push({id:l.id,before:{...l},after,reason:'Расстановка основного расписания'});placed.push(after)});
+ }
+ const total=placed.reduce((n,l)=>n+gapCount('classId',l.classId,l.date,placed)+gapCount('teacherId',l.teacherId,l.date,placed),0);
+ return {patches,unresolved,score:total,strategy};
+}
 function validate(db){
  for(const k of ['classes','teachers','subjects','lessons','rooms'])if(!Array.isArray(db[k]))throw Error('В файле отсутствует массив '+k);
  if(db.meta?.schemaVersion!=='1.0')throw Error('Поддерживается схема 1.0');
@@ -246,10 +275,26 @@ function optimize(db,date,options={}){
    if(!moved)break;
   }
  }
+ if(options.pullForward){
+  const weekEnd=addDays(date,4-new Date(date+'T12:00:00Z').getUTCDay()+1);
+  for(const cid of ids){
+   let today=effective(work).filter(x=>x.date===date&&x.classId===cid&&!x.cancelled&&!x.parked),max=Math.max(0,...today.map(x=>x.slot));
+   for(let target=1;target<max;target++){
+    today=effective(work).filter(x=>x.date===date&&x.classId===cid&&!x.cancelled&&!x.parked);if(today.some(x=>x.slot===target))continue;
+    const future=effective(work).filter(x=>x.classId===cid&&x.date>date&&x.date<=weekEnd&&!x.cancelled&&!x.parked&&!x.locked&&!absenceFor(x,work));
+    const candidates=future.filter(x=>x.slot===Math.max(...future.filter(y=>y.date===x.date).map(y=>y.slot))).sort((a,b)=>a.date.localeCompare(b.date)||b.slot-a.slot);
+    for(const source of candidates){
+     const block=future.filter(x=>x.date===source.date&&x.slot===source.slot),patch=block.map(x=>({id:x.id,before:x,after:{...x,date,slot:target,...slotInfo(work,cid,date,target)}}));
+     if(block.some(x=>x.locked||absenceFor(x,work))||newIssues(work,patch).length)continue;
+     patch.forEach(p=>put(p.before,p.after,'Перенос с '+p.before.date+' в свободное окно'));break;
+    }
+   }
+  }
+ }
  const patches=resolvePatches(db,[...changes.values()]);
  return {patches,unresolved,errors:newIssues(db,patches)};
 }
-const api={id,addDays,effective,effectiveBetween,minutes,overlap,disjoint,absenceFor,pairIssues,conflicts,changeIssues,candidates,subjectFamily,slotInfo,rebuild,validate,newIssues,transfer,optimize,patchedDB,resolvePatches,roomOnlyChange,profileKeys,profileNames,profileShort,classProfiles,profileAudience,profileRank,sortProfileRows,profileLines};
+const api={id,addDays,effective,effectiveBetween,minutes,overlap,disjoint,absenceFor,pairIssues,conflicts,changeIssues,candidates,subjectFamily,slotInfo,rebuild,generateBase,validate,newIssues,transfer,optimize,patchedDB,resolvePatches,roomOnlyChange,profileKeys,profileNames,profileShort,classProfiles,profileAudience,profileRank,sortProfileRows,profileLines};
 root.ScheduleEngine=api;
 if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

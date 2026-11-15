@@ -16,6 +16,14 @@ db.overrides.l1={cancelled:true};
 assert.equal(E.effective(db)[0].cancelled,true);assert.equal(base.cancelled,undefined);
 assert.equal(E.rebuild(db,'2026-09-21',['c1'])[0].after.slot,1);
 db.overrides.l2={locked:true};assert.equal(E.rebuild(db,'2026-09-21',['c1']).length,0);
+{
+ const d={meta:{schemaVersion:'1.0'},classes:[{id:'c',name:'5а'}],subjects:[{id:'s',name:'Математика'}],teachers:[{id:'t',name:'Учитель',workDays:[1,2,3,4,5],allowedSlots:[1,2,3,4]}],rooms:[],calendar:[],teacherSubjects:[],absences:[],overrides:{},extraLessons:[],lessons:[]};
+ const template=[1,2,3].map(i=>({id:'p'+i,classId:'c',subjectId:'s',teacherId:'t',date:'2026-09-07',slot:1,parked:true,parkingArea:'bottom'}));
+ const generated=E.generateBase(d,template,{maxSlot:4,strategy:'balanced'});assert.equal(generated.patches.length,3);assert.equal(generated.unresolved.length,0);assert(generated.patches.every(p=>!p.after.parked));assert.equal(E.conflicts({...d,lessons:generated.patches.map(p=>p.after)}).length,0);
+ const tight={...d,classes:[...d.classes,{id:'c2',name:'5б'}],teachers:[{...d.teachers[0],workDays:[1],allowedSlots:[1]}]},blocked=[{...template[0],id:'x1',parked:true},{...template[0],id:'x2',classId:'c2',parked:true}];assert.equal(E.generateBase(tight,blocked,{maxSlot:1,strategy:'balanced'}).unresolved.length,1);const emergency=E.generateBase(tight,blocked,{maxSlot:1,strategy:'emergency'});assert.equal(emergency.patches.length,2);assert(E.conflicts({...tight,lessons:emergency.patches.map(p=>p.after)}).some(x=>x.kind==='Учитель занят одновременно'));
+ d.lessons=[{...template[0],id:'locked',date:'2026-09-21',slot:3,parked:false,locked:true},{...template[1],id:'future',date:'2026-09-22',slot:4,parked:false}];
+ const pulled=E.optimize(d,'2026-09-21',{compact:false,pullForward:true});assert(pulled.patches.some(p=>p.id==='future'&&p.after.date==='2026-09-21'&&p.after.slot<3));
+}
 let actual=JSON.parse(fs.readFileSync('seed.json','utf8'));
 assert.equal(E.validate(actual),true);
 assert.equal(actual.students,undefined);assert.equal(actual.documents,undefined);
