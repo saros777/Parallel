@@ -101,7 +101,8 @@ window.parallelBeforeClose=async()=>{
  return projectTask(()=>projectConfirm());
 };
 function projectAdopt(next,info){
- clearTimeout(saveTimer);studioCancel();db=next;settings={subject:true,teacher:true,room:true,group:true,abbreviate:true,labels:{},...db.preferences};revision=info?.revision??revision;selectedClasses=null;classFilter='';teacherFilter='';selectedLesson=null;route='schedule';studioPeriod='base';date=SM.anchor(db);saveError='';dirty=false;fingerprint=stateMark();projectSetInfo(info||{name:(db.meta.projectName||'Расписание')+'.parallel',modified:false});render();
+ const migrated=!!next.__catalogChanged;
+ clearTimeout(saveTimer);studioCancel();db=next;settings={subject:true,teacher:true,room:true,group:true,abbreviate:true,labels:{},...db.preferences};revision=info?.revision??revision;selectedClasses=null;classFilter='';teacherFilter='';selectedLesson=null;route='schedule';studioPeriod='base';date=SM.anchor(db);saveError='';dirty=migrated;fingerprint=migrated?'':stateMark();projectSetInfo({...info||{name:(db.meta.projectName||'Расписание')+'.parallel',modified:false},modified:migrated||info?.modified});render();
 }
 async function projectOpen(index=null){
  if($('#dialog').open)return;

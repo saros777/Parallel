@@ -1,6 +1,6 @@
 /* Full-window timetable editor. One click picks up, the next places; Escape cancels. */
 const SM=StudioModel;
-let studioPeriod='base',studioAxis='classes',studioPick=null,studioWork=null,studioRows=[],studioDates=[],studioEntities=[],studioSlots=8,studioFilters={bottom:{mode:'all',value:''},side:{mode:'all',value:''}},studioGhost=null,studioRedo=[];
+let studioPeriod='base',studioAxis='classes',studioTeacherSpan='week',studioTeacherDay=1,studioPick=null,studioWork=null,studioRows=[],studioRoomRows=[],studioDates=[],studioEntities=[],studioSlots=8,studioFilters={bottom:{mode:'all',value:''},side:{mode:'all',value:''}},studioGhost=null,studioRedo=[];
 date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());
 let studioBottom=90,studioSide=160,studioResizeObserver=null;
 const studioFields=['classes','teachers','rooms','subjects','courses','groups','teacherSubjects','baseSchedule'];
@@ -45,12 +45,14 @@ card=function(l){
  if(v.subject&&['teachers','rooms'].includes(studioAxis))parts.push(studioSubject(l));
  if(v.className&&['teachers','rooms'].includes(studioAxis))parts.push(lookup('classes',l.classId)?.name||'—');
  if(studioAxis==='general'&&v.teacher)parts.push(studioTeacher(l.teacherId));
- if(v.room&&studioAxis!=='rooms')parts.push(l.roomId?PrintTools.roomNumber(roomName(l.roomId)):'—');
+ const quickRoom=v.room&&studioAxis==='teachers',roomText=l.roomId?PrintTools.roomNumber(roomName(l.roomId)):'—';
+ if(v.room&&studioAxis!=='rooms'&&!quickRoom)parts.push(roomText);
  if(v.teacher&&studioAxis==='rooms')parts.push(studioTeacher(l.teacherId));
  if(v.group&&studioGroup(l))parts.push(studioGroup(l));
  if(l.cycleWeeks===2)parts.push(l.cyclePhase?'II':'I');
  const color=lookup('teachers',l.teacherId)?.color||W.teacherColor(l.teacherId,db);
- return `<button type="button" class="lesson studio-card ${l.placementForced?'forced':''} ${studioPick?.id===l.id?'picked':''}" data-lesson="${h(l.id)}" style="--subject-color:${h(color)};--text-length:${[...parts.join(' · ')].length||1};--text-em:${typeof studioTextMeasure==='function'?studioTextMeasure(parts.join(' · ')||'·'):1.8}" title="${h(studioBrief(l))}" aria-label="${h(studioBrief(l))}">${h(parts.join(' · ')||'·')}</button>`;
+ const text=parts.join(' · ')||'·',measure=text+(quickRoom?' · '+roomText:'');
+ return `<button type="button" class="lesson studio-card ${l.placementForced?'forced':''} ${studioPick?.id===l.id?'picked':''}" data-lesson="${h(l.id)}" style="--subject-color:${h(color)};--text-length:${[...measure].length||1};--text-em:${typeof studioTextMeasure==='function'?studioTextMeasure(measure):1.8}" title="${h(studioBrief(l))}" aria-label="${h(studioBrief(l))}"><span class="studio-card-text">${h(text)}</span>${quickRoom?`<span class="studio-room-chip" data-room-chip="${h(l.id)}" title="Изменить кабинет">${h(roomText)}</span>`:''}</button>`;
 };
 selected=function(){return db.classes.filter(c=>!selectedClasses||selectedClasses.has(c.id))};
 function studioContext(){
@@ -117,7 +119,7 @@ function studioPark(area){
 }
 let studioPointer={x:0,y:0};
 function studioPositionGhost(){if(studioGhost)studioGhost.style.transform=`translate3d(${studioPointer.x}px,${studioPointer.y}px,0) translate(-50%,-50%)`}
-function studioCancel(){studioClosePopup();studioPick=null;studioGhost?.remove();studioGhost=null;$$('.picked,.target-ok,.target-bad,.target-block,.target-pending').forEach(e=>e.classList.remove('picked','target-ok','target-bad','target-block','target-pending'));$('#studio-hint')?.replaceChildren(document.createTextNode('Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить'))}
+function studioCancel(){studioClosePopup();document.querySelector('#studio-room-menu')?.remove();studioPick=null;studioGhost?.remove();studioGhost=null;$$('.picked,.target-ok,.target-bad,.target-block,.target-pending').forEach(e=>e.classList.remove('picked','target-ok','target-bad','target-block','target-pending'));$('#studio-hint')?.replaceChildren(document.createTextNode('Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить'))}
 function studioTake(id){
  const l=studioRows.find(l=>l.id===id);if(!l)return;
  if(l.locked||l.cancelled){message('Сначала снимите закрепление или восстановите урок.');return}
@@ -164,56 +166,66 @@ function studioFilterRows(area,rows){
  return [...filtered].sort((a,b)=>String(lookup(f.mode==='teacher'?'teachers':f.mode==='subject'?'subjects':'classes',a[field])?.name||'').localeCompare(String(lookup(f.mode==='teacher'?'teachers':f.mode==='subject'?'subjects':'classes',b[field])?.name||''),'ru',{numeric:true})||a.slot-b.slot||a.date.localeCompare(b.date));
 }
 function studioTray(area,rows){
- const f=studioFilter(area),items=studioFilterRows(area,rows),choices=f.mode==='class'?db.classes:f.mode==='teacher'?db.teachers:f.mode==='subject'?db.subjects:[];
+ const f=studioFilter(area),items=studioFilterRows(area,rows),selectedLabel=f.value?(f.mode==='teacher'?studioTeacher(f.value):f.mode==='subject'?studioSubject({subjectId:f.value}):lookup('classes',f.value)?.name):'';
  const label=l=>f.mode==='teacher'?studioTeacher(l.teacherId):f.mode==='subject'?(lookup('subjects',l.subjectId)?.name||'Предмет'):(lookup('classes',l.classId)?.name||'Класс');
- return `<header><strong>${area==='side'?'Снятые':'Неразмещённые'} <span>${items.length}${items.length!==rows.length?' / '+rows.length:''}</span></strong><span class="tray-filters"><select data-tray-mode="${area}" aria-label="Группировка ${area==='side'?'снятых уроков':'резерва'}"><option value="all" ${f.mode==='all'?'selected':''}>Вся школа</option><option value="class" ${f.mode==='class'?'selected':''}>По классу</option><option value="teacher" ${f.mode==='teacher'?'selected':''}>По учителю</option><option value="subject" ${f.mode==='subject'?'selected':''}>По предмету</option></select>${choices.length?`<select data-tray-value="${area}" aria-label="Выбор для фильтра"><option value="">Все</option>${choices.map(x=>`<option value="${h(x.id)}" ${f.value===x.id?'selected':''}>${h(f.mode==='teacher'?studioTeacher(x.id):x.name)}</option>`).join('')}</select>`:''}</span></header><div class="studio-tray-content">${items.map(l=>`<div class="tray-item"><small>${h(label(l))}</small>${card(l)}</div>`).join('')||'<p class="hint">Нет карточек для выбранного фильтра</p>'}</div>`;
+ const button=(mode,text)=>`<button type="button" data-tray-filter="${area}" data-filter-mode="${mode}" class="${f.mode===mode?'active':''}" title="${h(text)}">${h(f.mode===mode&&selectedLabel?text.split(' ')[0]+': '+selectedLabel:text)}</button>`;
+ return `<header><strong>${area==='side'?'Снятые':'Неразмещённые'} <span>${items.length}${items.length!==rows.length?' / '+rows.length:''}</span></strong><span class="tray-filter-buttons">${button('all','Все')}${button('class','Классы')}${button('teacher','Учителя')}${button('subject','Предметы')}</span></header><div class="studio-tray-content">${items.map(l=>`<div class="tray-item"><small>${h(label(l))}</small>${card(l)}</div>`).join('')||'<p class="hint">Нет карточек для выбранного фильтра</p>'}</div>`;
 }
-function studioFreeRooms(rows,d,slot){
+function studioFreeRooms(rows,d,slot,teacherId=null){
  const occupied=new Set(rows.filter(l=>!l.cancelled&&!l.parked&&!l.suspended&&l.date===d&&l.slot===slot&&l.roomId).map(l=>l.roomId));
- const free=db.rooms.filter(r=>!occupied.has(r.id)).map(r=>PrintTools.roomNumber(r.name)||r.name).sort((a,b)=>a.localeCompare(b,'ru',{numeric:true}));
- return {text:free.length?free.slice(0,6).join(', ')+(free.length>6?' +'+(free.length-6):''):'—',title:free.join(', ')||'Свободных кабинетов нет'};
+ const primary=new Map(db.classes.filter(c=>(c.grade||parseInt(c.name))<=4).flatMap(c=>{const room=c.homeRoomId||settings.roomPolicy?.classRooms?.[c.id]?.[0];return room?[[room,c.id]]:[]})),teacherClasses=new Set(teacherId?[...(db.courses||[]).filter(c=>c.teacherId===teacherId).map(c=>c.classId),...rows.filter(l=>l.teacherId===teacherId).map(l=>l.classId)]:[]);
+ const familiarPrimary=new Set([...primary].filter(([,classId])=>teacherClasses.has(classId)).map(([room])=>room));
+ const free=db.rooms.filter(r=>!occupied.has(r.id)).map(r=>({id:r.id,text:PrintTools.roomNumber(r.name)||r.name,primary:primary.has(r.id)&&!familiarPrimary.has(r.id)})).sort((a,b)=>Number(a.primary)-Number(b.primary)||a.text.localeCompare(b.text,'ru',{numeric:true}));
+ const names=free.map(x=>x.text);return {text:names.length?names.slice(0,4).join(', ')+(names.length>4?' +'+(names.length-4):''):'—',title:names.join(', ')||'Свободных кабинетов нет',names};
 }
 renderSchedule=function(){
  mode='week';compact=true;grade='all';classFilter='';
  const week=studioPeriod==='base'?SM.anchor(db):monday(date);
- studioDates=Array.from({length:5},(_,i)=>E.addDays(week,i));
+ const weekDates=Array.from({length:5},(_,i)=>E.addDays(week,i));studioDates=studioAxis==='teachers'&&studioTeacherSpan==='day'?[studioPeriod==='weeks'?date:weekDates[Math.max(0,Math.min(4,studioTeacherDay-1))]]:weekDates;
  studioWork=studioContext();
- const periodRows=(studioPeriod==='base'?E.effective(studioWork):E.effectiveBetween(studioWork,studioDates[0],studioDates[4])).filter(l=>studioDates.includes(l.date));
- const carried=studioPeriod==='weeks'?[...new Map(E.effective(db).filter(l=>l.parkingArea==='side'&&!l.cancelled&&l.date<=studioDates[4]).map(l=>[String(l.id).split('@')[0],l])).values()]:[];
+ const periodRows=(studioPeriod==='base'?E.effective(studioWork):E.effectiveBetween(studioWork,studioDates[0],studioDates.at(-1))).filter(l=>studioDates.includes(l.date));
+ const carried=studioPeriod==='weeks'?[...new Map(E.effective(db).filter(l=>l.parkingArea==='side'&&!l.cancelled&&l.date<=studioDates.at(-1)).map(l=>[String(l.id).split('@')[0],l])).values()]:[];
  studioRows=[...new Map([...periodRows,...carried].map(l=>[l.id,l])).values()];
  studioWork={...studioWork,baseSchedule:null,lessons:studioRows,extraLessons:[],overrides:{}};
  const ids=new Set(selected().map(c=>c.id));
  const current=periodRows.filter(l=>!l.cancelled),visible=current.filter(l=>ids.has(l.classId));
  const side=[...new Map([...carried,...current.filter(l=>l.suspended)].map(l=>[l.id,l])).values()];
  const bottom=current.filter(l=>l.parked&&l.parkingArea!=='side');
- const rows=visible.filter(l=>!l.parked&&!l.suspended),roomRows=current.filter(l=>!l.parked&&!l.suspended);
+ const rows=visible.filter(l=>!l.parked&&!l.suspended),roomRows=current.filter(l=>!l.parked&&!l.suspended);studioRoomRows=roomRows;
  const type=studioAxis==='general'?'classes':studioAxis,key=type==='classes'?'classId':type==='teachers'?'teacherId':'roomId';
  studioEntities=type==='classes'?selected():db[type].filter(e=>visible.some(l=>l[key]===e.id));
  studioSlots=Math.max(8,...visible.map(l=>l.slot));
  const index=new Map();for(const l of rows){const k=[l[key],l.date,l.slot].join('|');if(!index.has(k))index.set(k,[]);index.get(k).push(l)}
  $('#heading-actions').innerHTML='';
- if(typeof studioCanReuseView!=='function'||!studioCanReuseView()) $('#controls').innerHTML=`<div class="studio-toolbar"><div class="segmented"><button data-period="base" class="${studioPeriod==='base'?'active':''}">Основное расписание</button><button data-period="weeks" class="${studioPeriod==='weeks'?'active':''}">По неделям</button></div>${studioPeriod==='weeks'?dateBar()+'<button id="studio-today">Сегодня</button>':''}<div class="segmented">${[['classes','Классы'],['teachers','Учителя'],['rooms','Кабинеты'],['general','Общее']].map(([k,n])=>`<button data-studio-axis="${k}" class="${studioAxis===k?'active':''}">${n}</button>`).join('')}</div><button id="class-choice">Выбор классов</button><button id="display-settings">Вид карточки</button><span class="spacer"></span><button id="studio-calculate">${studioPeriod==='base'?'Рассчитать основу':'Пересчитать день'}</button><button id="studio-absence">Отсутствие</button><button id="studio-print">Печать</button><button id="studio-undo" title="Отменить" aria-label="Отменить" ${db.history.length?'':'disabled'}>↶</button><button id="studio-redo" title="Повторить" aria-label="Повторить" ${studioRedo.length?'':'disabled'}>↷</button></div>`;
+ if(typeof studioCanReuseView!=='function'||!studioCanReuseView()) $('#controls').innerHTML=`<div class="studio-toolbar"><div class="segmented"><button data-period="base" class="${studioPeriod==='base'?'active':''}">Основное расписание</button><button data-period="weeks" class="${studioPeriod==='weeks'?'active':''}">По неделям</button></div>${studioPeriod==='weeks'?dateBar()+'<button id="studio-today">Сегодня</button>':''}<div class="segmented">${[['classes','Классы'],['teachers','Учителя'],['rooms','Кабинеты'],['general','Общее']].map(([k,n])=>`<button data-studio-axis="${k}" class="${studioAxis===k?'active':''}">${n}</button>`).join('')}</div>${studioAxis==='teachers'?`<div class="segmented"><button data-teacher-span="week" class="${studioTeacherSpan==='week'?'active':''}">Неделя</button><button data-teacher-span="day" class="${studioTeacherSpan==='day'?'active':''}">День</button></div>${studioPeriod==='base'&&studioTeacherSpan==='day'?`<select id="studio-teacher-day" aria-label="День недели">${[1,2,3,4,5].map(d=>`<option value="${d}" ${studioTeacherDay===d?'selected':''}>${days[d]}</option>`).join('')}</select>`:''}`:''}<button id="class-choice">Выбор классов</button><button id="display-settings">Вид карточки</button><span class="spacer"></span><button id="studio-calculate">${studioPeriod==='base'?'Рассчитать основу':'Пересчитать день'}</button><button id="studio-absence">Отсутствие</button><button id="studio-print">Печать</button><button id="studio-undo" title="Отменить" aria-label="Отменить" ${db.history.length?'':'disabled'}>↶</button><button id="studio-redo" title="Повторить" aria-label="Повторить" ${studioRedo.length?'':'disabled'}>↷</button></div>`;
  const problems=E.conflicts(studioWork,rows),problemIds=new Set(problems.flatMap(x=>x.lessonIds));
  const paint={index,problemIds,problems,key,side,bottom,rows,roomRows};if(typeof studioUpdateExisting==='function'&&studioUpdateExisting(paint))return;
  const freeFooter=['teachers','rooms'].includes(studioAxis)?`<tfoot><tr><th title="Свободные кабинеты">Своб.</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const free=studioFreeRooms(roomRows,d,i+1);return `<td title="${h(free.title)}">${h(free.text)}</td>`}).join('')).join('')}</tr></tfoot>`:'';
- $('#view').innerHTML=`<div class="studio-meta"><span>${studioPeriod==='base'?'Основа · изменения повторяются по неделям':fmt(studioDates[0])+' — '+fmt(studioDates[4])+' · исключения выбранной недели'} · ${studioEntities.length} строк</span></div><div id="studio-workspace"><div class="studio-grid"><table class="studio-matrix"><colgroup><col class="entity-col">${studioDates.map(()=>Array.from({length:studioSlots},()=>'<col>').join('')).join('')}</colgroup><thead><tr><th rowspan="2">${type==='classes'?'Класс':type==='teachers'?'Учитель':'Кабинет'}</th>${studioDates.map(d=>`<th colspan="${studioSlots}">${days[SM.day(d)]}${studioPeriod==='weeks'?` <small>${fmt(d)}</small>`:''}</th>`).join('')}</tr><tr>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>`<th data-col-head="${d}|${i+1}">${i+1}</th>`).join('')).join('')}</tr></thead><tbody>${studioEntities.map(e=>`<tr><th data-row-head="${e.id}" title="${h(e.name)}">${h(type==='teachers'?studioTeacher(e.id):type==='rooms'?PrintTools.roomNumber(e.name):e.name)}</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const ls=E.sortProfileRows(index.get([e.id,d,i+1].join('|'))||[],db);return `<td data-entity="${e.id}" data-date="${d}" data-slot="${i+1}" tabindex="0" aria-label="${h(e.name)} ${days[SM.day(d)]} урок ${i+1}" class="${i===0?'day-start':''}"><div class="studio-stack" style="--parts:${Math.max(1,ls.length)}">${ls.map(l=>card({...l,placementForced:l.placementForced||problemIds.has(l.id)})).join('')}</div></td>`}).join('')).join('')}</tr>`).join('')}</tbody>${freeFooter}</table></div><div id="studio-v-split" role="separator" aria-label="Ширина правой области" aria-orientation="vertical" tabindex="0"></div><aside id="studio-side" class="studio-tray" data-park="side">${studioTray('side',side)}</aside><div id="studio-h-split" role="separator" aria-label="Высота нижней области" aria-orientation="horizontal" tabindex="0"></div><section id="studio-bottom" class="studio-tray" data-park="bottom">${studioTray('bottom',bottom)}</section></div><div id="studio-hint" role="status">Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить кабинет</div>`;
+ const rangeLabel=studioDates.length===1?fmt(studioDates[0]):fmt(studioDates[0])+' — '+fmt(studioDates.at(-1));
+ $('#view').innerHTML=`<div class="studio-meta"><span>${studioPeriod==='base'?'Основа · изменения повторяются по неделям':rangeLabel+' · исключения выбранного периода'} · ${studioEntities.length} строк</span><span id="studio-free-room-panel">Свободные кабинеты: наведите на номер урока</span></div><div id="studio-workspace"><div class="studio-grid"><table class="studio-matrix"><colgroup><col class="entity-col">${studioDates.map(()=>Array.from({length:studioSlots},()=>'<col>').join('')).join('')}</colgroup><thead><tr><th rowspan="2">${type==='classes'?'Класс':type==='teachers'?'Учитель':'Кабинет'}</th>${studioDates.map(d=>`<th colspan="${studioSlots}">${days[SM.day(d)]}${studioPeriod==='weeks'?` <small>${fmt(d)}</small>`:''}</th>`).join('')}</tr><tr>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>`<th data-col-head="${d}|${i+1}">${i+1}</th>`).join('')).join('')}</tr></thead><tbody>${studioEntities.map(e=>`<tr><th data-row-head="${e.id}" title="${h(e.name)}">${h(type==='teachers'?studioTeacher(e.id):type==='rooms'?PrintTools.roomNumber(e.name):e.name)}</th>${studioDates.map(d=>Array.from({length:studioSlots},(_,i)=>{const ls=E.sortProfileRows(index.get([e.id,d,i+1].join('|'))||[],db);return `<td data-entity="${e.id}" data-date="${d}" data-slot="${i+1}" tabindex="0" aria-label="${h(e.name)} ${days[SM.day(d)]} урок ${i+1}" class="${i===0?'day-start':''}"><div class="studio-stack" style="--parts:${Math.max(1,ls.length)}">${ls.map(l=>card({...l,placementForced:l.placementForced||problemIds.has(l.id)})).join('')}</div></td>`}).join('')).join('')}</tr>`).join('')}</tbody>${freeFooter}</table></div><div id="studio-v-split" role="separator" aria-label="Ширина правой области" aria-orientation="vertical" tabindex="0"></div><aside id="studio-side" class="studio-tray" data-park="side">${studioTray('side',side)}</aside><div id="studio-h-split" role="separator" aria-label="Высота нижней области" aria-orientation="horizontal" tabindex="0"></div><section id="studio-bottom" class="studio-tray" data-park="bottom">${studioTray('bottom',bottom)}</section></div><div id="studio-hint" role="status">Клик — взять · следующий клик — разместить · Esc — отменить · правая кнопка — изменить кабинет</div>`;
  $$('[data-period]').forEach(b=>b.onclick=()=>{studioCancel();const next=b.dataset.period;if(next==='weeks'&&studioPeriod!=='weeks')date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());studioPeriod=next;render()});
  $$('[data-studio-axis]').forEach(b=>b.onclick=()=>{studioCancel();studioAxis=b.dataset.studioAxis;render()});
- if(studioPeriod==='weeks'){bindDateBar(7);$('#studio-today').onclick=()=>{date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());render()}}
+ $$('[data-teacher-span]').forEach(b=>b.onclick=()=>{studioCancel();studioTeacherSpan=b.dataset.teacherSpan;render()});$('#studio-teacher-day')?.addEventListener('change',e=>{studioTeacherDay=+e.target.value;render()});
+ if(studioPeriod==='weeks'){bindDateBar(studioAxis==='teachers'&&studioTeacherSpan==='day'?1:7);$('#studio-today').onclick=()=>{date=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date());render()}}
  $('#class-choice').onclick=showClassChoice;$('#display-settings').onclick=showSettings;
  $('#studio-absence').onclick=()=>{if(studioPeriod==='base'){studioPeriod='weeks';date=SM.anchor(db);render()}showAbsence()};
  $('#studio-print').onclick=()=>showPrint();$('#studio-calculate').onclick=()=>studioPeriod==='base'?showBaseGenerator():showRebuild();
  $('#studio-undo').onclick=undo;$('#studio-redo').onclick=redo;studioBindTrayFilters();
- if(typeof studioRememberCells==='function')studioRememberCells(paint);bindCards();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
+ if(typeof studioRememberCells==='function')studioRememberCells(paint);bindCards();studioBindFreeRooms();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
 };
+function studioBindFreeRooms(){
+ const panel=$('#studio-free-room-panel');if(!panel)return;const show=(d,slot,teacherId=null)=>{const free=studioFreeRooms(studioRoomRows,d,+slot,teacherId);panel.textContent=`${days[SM.day(d)]} · ${slot}-й урок · свободны: ${free.names.join(', ')||'нет'}`;panel.title=free.title};
+ $$('[data-col-head]').forEach(x=>x.onpointerenter=()=>{const [d,slot]=x.dataset.colHead.split('|');show(d,slot)});$$('[data-entity]').forEach(x=>x.addEventListener('pointerenter',()=>show(x.dataset.date,x.dataset.slot,studioAxis==='teachers'?x.dataset.entity:null)));
+}
 bindCards=function(){
  if(route!=='schedule'){ // Existing replacement desk uses selection, not pickup.
   $$('[data-lesson]').forEach(b=>{b.onclick=()=>{selectedLesson=b.dataset.lesson;renderInspector()};b.oncontextmenu=e=>{e.preventDefault();showLesson(b.dataset.lesson)}});return;
  }
  $$('[data-lesson]').forEach(b=>{
   b.draggable=false;
-  b.onclick=e=>{if(studioPick){if(b.closest('td'))return; e.stopPropagation();if(b.dataset.lesson===studioPick.id)studioCancel();else studioPark(b.closest('[data-park]').dataset.park);return}e.stopPropagation();if(e.detail>0)studioPointer={x:e.clientX,y:e.clientY};else{const r=b.getBoundingClientRect();studioPointer={x:r.left+r.width/2,y:r.top+r.height/2}}studioTake(b.dataset.lesson)};
+  b.onclick=e=>{if(e.target.closest('[data-room-chip]'))return;if(studioPick){if(b.closest('td'))return; e.stopPropagation();if(b.dataset.lesson===studioPick.id)studioCancel();else studioPark(b.closest('[data-park]').dataset.park);return}e.stopPropagation();if(e.detail>0)studioPointer={x:e.clientX,y:e.clientY};else{const r=b.getBoundingClientRect();studioPointer={x:r.left+r.width/2,y:r.top+r.height/2}}studioTake(b.dataset.lesson)};
   b.oncontextmenu=e=>{e.preventDefault();studioCancel();if(['teachers','rooms'].includes(studioAxis))studioRoomEditor(b.dataset.lesson);else showLesson(b.dataset.lesson)};
+  b.querySelector('[data-room-chip]')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();studioCancel();studioRoomMenu(e.currentTarget,b.dataset.lesson)});
  });
  $$('[data-entity]').forEach(td=>{
   td.onclick=()=>{if(studioPick)studioPlace(td)};
@@ -224,19 +236,29 @@ bindCards=function(){
  $$('[data-park]').forEach(t=>t.onclick=e=>{if(!e.target.closest('select,button')&&studioPick)studioPark(t.dataset.park)});
 };
 function studioBindTrayFilters(){
- $$('[data-tray-mode]').forEach(s=>s.onchange=()=>{studioFilters[s.dataset.trayMode]={mode:s.value,value:''};render()});
- $$('[data-tray-value]').forEach(s=>s.onchange=()=>{studioFilter(s.dataset.trayValue).value=s.value;render()});
+ $$('[data-tray-filter]').forEach(button=>button.onclick=e=>{e.stopPropagation();const area=button.dataset.trayFilter,mode=button.dataset.filterMode;if(mode==='all'){studioFilters[area]={mode:'all',value:''};render();return}studioOpenTrayMenu(button,area,mode)});
+}
+function studioOpenTrayMenu(anchor,area,mode){
+ document.querySelector('#studio-filter-menu')?.remove();const rows=mode==='class'?db.classes:mode==='teacher'?db.teachers:db.subjects,current=studioFilter(area);
+ const menu=document.createElement('div');menu.id='studio-filter-menu';menu.setAttribute('role','menu');menu.innerHTML=`<strong>${mode==='class'?'Выберите класс':mode==='teacher'?'Выберите учителя':'Выберите предмет'}</strong><div>${rows.map(x=>`<button type="button" role="menuitem" data-filter-value="${h(x.id)}" class="${current.mode===mode&&current.value===x.id?'active':''}">${h(mode==='teacher'?studioTeacher(x.id):mode==='subject'?studioSubject({subjectId:x.id}):x.name)}</button>`).join('')}</div>`;
+ document.body.append(menu);const r=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.left=Math.max(6,Math.min(r.left,innerWidth-box.width-6))+'px';menu.style.top=Math.max(6,Math.min(r.bottom+3,innerHeight-box.height-6))+'px';
+ menu.querySelectorAll('[data-filter-value]').forEach(b=>b.onclick=()=>{studioFilters[area]={mode,value:b.dataset.filterValue};menu.remove();render()});menu.querySelector('button')?.focus();
+ const close=e=>{if(!menu.contains(e.target)&&e.target!==anchor){menu.remove();document.removeEventListener('pointerdown',close,true)}};setTimeout(()=>document.addEventListener('pointerdown',close,true));
 }
 function studioRoomEditor(id){
  const old=studioRows.find(l=>l.id===id);if(!old)return;
  dialog('Кабинет · '+studioBrief(old),`<label class="field">Назначение кабинета<select id="studio-quick-room"><option value="">Подобрать автоматически</option>${db.rooms.map(r=>`<option value="${h(r.id)}" ${old.roomId===r.id&&old.roomMode==='manual'?'selected':''}>${h(PrintTools.roomNumber(r.name)||r.name)}</option>`).join('')}</select></label><p class="hint">Ручной кабинет относится к этой карточке и имеет приоритет над правилами учителя. Автоматический выбор пересчитается с учётом занятости.</p>`,[{text:'Полное редактирование',action:()=>showLesson(id)},{text:'Сохранить кабинет',class:'primary',action:()=>{const roomId=$('#studio-quick-room').value||null;studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:roomId?'manual':'auto'}}])}}]);
 }
+function studioRoomMenu(anchor,id){
+ document.querySelector('#studio-room-menu')?.remove();const old=studioRows.find(l=>l.id===id);if(!old)return;const menu=document.createElement('div');menu.id='studio-room-menu';menu.innerHTML=`<strong>${h(studioSubject(old))} · ${h(lookup('classes',old.classId)?.name)}</strong><button type="button" data-room-value="">Автоподбор</button>${db.rooms.map(r=>`<button type="button" data-room-value="${h(r.id)}" class="${old.roomId===r.id?'active':''}">${h(PrintTools.roomNumber(r.name)||r.name)}</button>`).join('')}`;document.body.append(menu);
+ const rect=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.left=Math.max(6,Math.min(rect.left,innerWidth-box.width-6))+'px';menu.style.top=Math.max(6,Math.min(rect.bottom+3,innerHeight-box.height-6))+'px';menu.querySelectorAll('[data-room-value]').forEach(b=>b.onclick=()=>{const roomId=b.dataset.roomValue||null;menu.remove();studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:roomId?'manual':'auto'}}])});menu.querySelector('button')?.focus();
+}
 function studioFit(){
  const workspace=$('#studio-workspace');if(!workspace)return;
  workspace.style.setProperty('--side-width',studioSide+'px');workspace.style.setProperty('--bottom-height',studioBottom+'px');
- const grid=$('.studio-grid'),n=Math.max(1,studioEntities.length),footer=['teachers','rooms'].includes(studioAxis)?18:0,rowHeight=Math.max(1,(grid.clientHeight-38-footer-n)/n);
+ const grid=$('.studio-grid'),n=Math.max(1,studioEntities.length),footer=['teachers','rooms'].includes(studioAxis)?24:0,rowHeight=Math.max(1,(grid.clientHeight-38-footer-n)/n);
  workspace.style.setProperty('--row-height',rowHeight+'px');workspace.style.setProperty('--footer-height',footer+'px');
- const colWidth=Math.max(1,(grid.clientWidth-(studioAxis==='teachers'?110:44))/(studioSlots*5));
+ const colWidth=Math.max(1,(grid.clientWidth-(studioAxis==='teachers'?110:44))/(studioSlots*Math.max(1,studioDates.length)));
  workspace.style.setProperty('--card-width',colWidth+'px');workspace.style.setProperty('--card-height',Math.max(7,Math.min(24,rowHeight))+'px');
  workspace.style.setProperty('--card-font',Math.max(6,Math.min(12,colWidth/3.2,rowHeight*.65))+'px');
  $$('#studio-workspace .studio-card').forEach(c=>{

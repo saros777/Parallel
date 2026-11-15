@@ -27,6 +27,10 @@ function normalize(data){
  for(const k of ['courses','groups','periods','calendar','calls','teacherSubjects','extraLessons','absences','history'])out[k]??=[];
  out.overrides??={};
  if(typeof out.overrides!=='object'||Array.isArray(out.overrides))throw Error('Неверный формат изменений');
+ const catalogChanged=typeof SubjectCatalog!=='undefined'&&out.meta?.subjectCatalogRevision!==SubjectCatalog.revision;
+ if(catalogChanged)SubjectCatalog.clean(out);
+ // Keep migration state out of project JSON while allowing the desktop shell to save it.
+ if(catalogChanged)Object.defineProperty(out,'__catalogChanged',{value:true,enumerable:false});
  // Validate effective data as well, so imported patches cannot bypass schema checks.
  E.validate({...out,lessons:[...out.lessons,...out.extraLessons].map(l=>({...l,...out.overrides[l.id]}))});
  if(out.baseSchedule)E.validate({...out,lessons:out.baseSchedule.lessons});

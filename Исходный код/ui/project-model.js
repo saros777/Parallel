@@ -52,7 +52,7 @@
  function newProject(source,title,academicYear,copyDirectories=true){
   const year=academicYear.match(/\d{4}/)?.[0]||String(new Date().getFullYear()),sep=year+'-09-01',week=SM.monday(sep);
   const previousYear=+(source?.meta?.academicYear||year).match(/\d{4}/)?.[0]||+year,shift=d=>d?String(+d.slice(0,4)+(+year-previousYear))+d.slice(4):d;
-  const out={meta:{schemaVersion:'1.0',school:source?.meta?.school||'Школа',academicYear,projectName:title},classes:[],teachers:[],subjects:[],rooms:[],lessons:[],courses:[],groups:[],periods:[],calendar:[],calls:[],teacherSubjects:[],overrides:{},extraLessons:[],absences:[],history:[],preferences:{studioSuspensions:true},baseSchedule:{week,lessons:[]}};
+  const out={meta:{schemaVersion:'1.0',subjectCatalogRevision:source?.meta?.subjectCatalogRevision||1,school:source?.meta?.school||'Школа',academicYear,projectName:title},classes:[],teachers:[],subjects:[],rooms:[],lessons:[],courses:[],groups:[],periods:[],calendar:[],calls:[],teacherSubjects:[],overrides:{},extraLessons:[],absences:[],history:[],preferences:{studioSuspensions:true},baseSchedule:{week,lessons:[]}};
   if(copyDirectories&&source){for(const k of ['classes','teachers','subjects','rooms','groups','calls','teacherSubjects'])out[k]=clone(source[k]||[]);out.preferences=clone(source.preferences||{});for(const c of source.courses||[])if(c.teacherId&&c.weeklyHours>0)upsertCourse(out,{...clone(c),id:uid('course'),weeklyCount:courseCount(c),startDate:shift(c.startDate),endDate:shift(c.endDate),term:academicYear})}
   return out;
  }

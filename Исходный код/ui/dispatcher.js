@@ -275,7 +275,7 @@ async function boot(){
   const res=await fetch(API+'/api/state');timing.fetchMs=performance.now()-stage;stage=performance.now();const result=await res.json();timing.jsonMs=performance.now()-stage;if(!res.ok)throw Error(result.error);
   stage=performance.now();db=normalize(result.state);timing.normalizeMs=performance.now()-stage;revision=result.revision;connected=true;
   settings={...settings,...db.preferences,labels:db.preferences?.labels||{}};
-  stage=performance.now();fingerprint=stateMark();dirty=false;lastSaved=new Date(result.updated).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});loading=false;render();timing.renderMs=performance.now()-stage;timing.domReadyMs=performance.now();document.dispatchEvent(new CustomEvent('parallel:workspace-ready'));
+  stage=performance.now();dirty=!!db.__catalogChanged;fingerprint=dirty?'':stateMark();lastSaved=new Date(result.updated).toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit'});loading=false;render();timing.renderMs=performance.now()-stage;timing.domReadyMs=performance.now();document.dispatchEvent(new CustomEvent('parallel:workspace-ready'));
  }catch(e){
   window.go?.main?.DesktopBridge?.LogFrontendError?.(String(e.stack||e.message));
   loading=false;saveError=e.message;renderStatus();
