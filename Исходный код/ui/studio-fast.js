@@ -39,23 +39,8 @@ studioTake=function(id){
  for(const l of studioRows){if(!studioPick.byDay.has(l.date))studioPick.byDay.set(l.date,[]);studioPick.byDay.get(l.date).push(l)}
  studioPick.existing=studioConflictKeys;
 };
-studioAvailability=function(td){
- const cacheKey=td.dataset.entity+'|'+td.dataset.date+'|'+td.dataset.slot;if(studioPick.cache.has(cacheKey))return studioPick.cache.get(cacheKey);
- const notes=[],old=studioPick.source.get(studioPick.id),axis=studioAxis==='teachers'?'teacherId':studioAxis==='rooms'?'roomId':'classId';
- if(old[axis]!==td.dataset.entity){const r={blocked:true,notes:['Карточка относится к другой строке']};studioPick.cache.set(cacheKey,r);return r}
- const members=old.blockId?studioRows.filter(l=>l.blockId===old.blockId&&l.date===old.date):[old],ids=new Set(members.map(l=>l.id)),d=td.dataset.date;
- const patches=members.map(l=>({id:l.id,before:l,after:{...l,date:d,slot:+td.dataset.slot+(l.blockOffset||0)-(old.blockOffset||0),parked:false,suspended:false,parkingArea:null}}));
- if(members.some(l=>l.locked)){const result={blocked:true,notes:['Сначала снимите закрепление всех уроков спарки']};studioPick.cache.set(cacheKey,result);return result}
- if(patches.some(p=>p.after.slot<1||p.after.slot>studioSlots)){const r={blocked:true,notes:['Блок не помещается в этот день']};studioPick.cache.set(cacheKey,r);return r}
- const targetSlots=new Set(patches.map(p=>p.after.slot));for(const p of patches)p.after.absenceReturnFor=E.absenceFor(p.after,studioWork)?.id||null;
- const local={...studioWork,baseSchedule:null,lessons:(studioPick.byDay.get(d)||[]).filter(l=>targetSlots.has(l.slot)),overrides:{},extraLessons:[],calendar:studioWork.calendar.filter(c=>c.date===d)};
- const rows=local.preferences?.roomPolicy?.enabled?E.effective(E.patchedDB(local,patches)):[...local.lessons.filter(l=>!ids.has(l.id)),...patches.map(p=>p.after)],moved=rows.filter(l=>ids.has(l.id));
- for(const issue of E.conflicts(local,rows))if(!studioPick.existing.has(issue.kind+'|'+issue.lessonIds.slice().sort().join('|')))notes.push(issue.kind);
- for(const candidate of moved){
-  for(const kind of SM.restrictions(candidate,local))notes.push(kind);
-  if(E.absenceFor(candidate,local))notes.push('Учитель отмечен отсутствующим');
-  if(local.calendar.some(c=>c.classId===candidate.classId&&c.isHoliday))notes.push('Неучебный день');
-  if(local.preferences?.roomPolicy?.enabled&&candidate.roomMode==='auto'&&!candidate.roomId&&!studioPick.existing.has('Нет свободного кабинета|'+candidate.id))notes.push('Нет свободного кабинета');
- }
- const result={notes:[...new Set(notes)]};studioPick.cache.set(cacheKey,result);return result;
-};
+// Keep the incremental renderer, but use the exact same placement preview as
+// the click handler.  A second, approximate conflict calculation here caused
+// green cells to reject drops (and occupied cells to be marked red).
+const studioAvailabilityChecked=studioAvailability;
+studioAvailability=function(td){return studioAvailabilityChecked(td)};

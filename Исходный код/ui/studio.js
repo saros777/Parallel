@@ -72,13 +72,16 @@ function studioContext(){
  if(studioPeriod==='base')return {...db,basePreview:true,baseSchedule:null,lessons:SM.template(db),overrides:{},extraLessons:[],absences:[],calendar:[]};
  return db;
 }
-function studioApply(label,patches,forced=false){
+function studioApply(label,patches,forced=false,carryId=null){
  studioCancel();$('#dialog').close();
  transact(label,()=>{
   const changes=patches.map(p=>({...p,after:{...p.after,placementForced:forced}}));
   if(studioPeriod==='base')SM.commitBase(db,changes);
   else changes.forEach(p=>{if(!db.lessons.some(l=>l.id===p.id)&&!SM.expand(db).some(l=>l.id===p.id)&&!db.extraLessons.some(l=>l.id===p.id))db.extraLessons.push(p.after);else db.overrides[p.id]={...db.overrides[p.id],...p.after}});
  });
+ // A click on an occupied cell completes the exchange in one undoable
+ // transaction, then immediately continues with the displaced card.
+ if(carryId&&studioRows.some(l=>l.id===carryId&&!l.cancelled))studioTake(carryId);
 }
 function studioCheck(raw){
  const result=W.assess(studioWork,raw);
@@ -95,36 +98,54 @@ function studioPopup(title,body,actions){
  const r=panel.getBoundingClientRect();panel.style.left=Math.max(6,Math.min(studioPointer.x+12,innerWidth-r.width-6))+'px';panel.style.top=Math.max(6,Math.min(studioPointer.y+12,innerHeight-r.height-6))+'px';
  panel.querySelector('[data-pop-action]')?.focus({preventScroll:true});
 }
-function studioConfirm(label,raw){
+function studioConfirm(label,raw,carryId=null){
  const r=studioCheck(raw);const notes=[...new Set(r.issues.map(x=>x.kind))];
- if(!notes.length){studioApply(label,r.patches);return}
+ if(!notes.length){studioApply(label,r.patches,false,carryId);return}
  const moving=new Set(raw.map(p=>p.id));
  const otherIds=new Set(r.issues.flatMap(i=>i.lessonIds||[]).filter(id=>!moving.has(id)));
  const occupied=[...otherIds].map(id=>studioRows.find(l=>l.id===id)).filter(Boolean);
- studioPopup('Конфликт',`<ul>${notes.map(n=>`<li>${h(n)}</li>`).join('')}</ul>${occupied.length?`<small>${occupied.slice(0,3).map(l=>h(lookup('classes',l.classId)?.name+' · '+studioSubject(l)+' · '+days[SM.day(l.date)]+' '+l.slot)).join('<br>')}</small>`:''}`,[{text:'Не размещать',action:studioClosePopup},{text:'Игнорировать конфликт и разместить',class:'primary',action:()=>studioApply(label,r.patches,true)}]);
+ studioPopup('Конфликт',`<ul>${notes.map(n=>`<li>${h(n)}</li>`).join('')}</ul>${occupied.length?`<small>${occupied.slice(0,3).map(l=>h(lookup('classes',l.classId)?.name+' · '+studioSubject(l)+' · '+days[SM.day(l.date)]+' '+l.slot)).join('<br>')}</small>`:''}`,[{text:'Не размещать',action:studioClosePopup},{text:'Игнорировать конфликт и разместить',class:'primary',action:()=>studioApply(label,r.patches,true,carryId)}]);
 }
 function studioTime(classId,d,slot){const l=studioRows.find(l=>l.classId===classId&&l.date===d&&l.slot===slot&&l.time)||db.lessons.find(l=>l.classId===classId&&l.slot===slot&&l.time);return {time:l?.time||'',callId:l?.callId||null}}
-function studioPlan(td,action='together'){
+function studioPlacement(td,targetId=null){
  const old=studioRows.find(l=>l.id===studioPick?.id);if(!old)throw Error('Выберите урок');
  if(!SM.targetAllowed(old,studioAxis,td.dataset.entity))throw Error(studioAxis==='teachers'?'Выберите строку учителя этого урока':studioAxis==='rooms'?'Выберите строку кабинета этого урока':'Карточку можно разместить только в строке её класса');
- const target=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).find(l=>l.id!==old.id&&(!old.blockId||l.blockId!==old.blockId))?.id;
+ const members=old.blockId?studioRows.filter(l=>l.blockId===old.blockId&&l.date===old.date):[old],memberIds=new Set(members.map(l=>l.id));
+ if(members.some(l=>l.locked))throw Error('Сначала снимите закрепление всех уроков спарки');
+ const targetDate=td.dataset.date,targetSlot=+td.dataset.slot,probes=members.map(l=>({...l,date:targetDate,slot:targetSlot+(l.blockOffset||0)-(old.blockOffset||0),parked:false,suspended:false}));
+ if(probes.some(l=>l.slot<1||l.slot>studioSlots))throw Error('Блок уроков не помещается в этот день');
+ // Availability is defined by the visible lesson column, not by bell text.
+ // E.overlap also keeps alternate biweekly phases independent. The selected
+ // teacher must be free for every member of a paired block.
+ const busy=probes.find(probe=>probe.teacherId&&studioRows.some(l=>!memberIds.has(l.id)&&l.teacherId===probe.teacherId&&E.overlap(probe,l)));
+ if(busy)throw Error('Учитель уже занят на этом уроке');
+ const occupants=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).filter(l=>l&&!memberIds.has(l.id)&&!l.cancelled&&!l.parked&&!l.suspended&&l.classId===old.classId);
+ const exact=targetId?occupants.find(l=>l.id===targetId):null,overlapping=occupants.filter(l=>!E.disjoint(old,l,db));
+ if(overlapping.length>1)throw Error('В ячейке несколько подгрупп. Перемещайте их отдельно');
+ // Complementary subgroups share a slot. Clicking such a card must not
+ // displace it; only an overlapping lesson is exchanged.
+ const target=exact&&!E.disjoint(old,exact,db)?exact:(overlapping[0]||null);
+ if(target?.locked)throw Error('Целевой урок закреплён. Сначала снимите закрепление');
+ if(target?.blockId||members.length>1&&target)throw Error('Спарку можно обменивать только целиком');
+ return {old,members,target,action:target?'swap':'together'};
+}
+function studioPlan(td,action=null,targetId=null){
+ const placement=studioPlacement(td,targetId),{old,target}=placement;action=action||placement.action;
  const local=W.slice(studioWork,[old.date,td.dataset.date]);
- const patches=W.plan(local,old.id,td.dataset.date,+td.dataset.slot,{targetId:target===old.id?null:target,action,timingDB:studioWork});
+ const patches=W.plan(local,old.id,td.dataset.date,+td.dataset.slot,{targetId:target?.id||null,action,timingDB:studioWork});
  Object.assign(patches[0].after,studioTime(old.classId,td.dataset.date,+td.dataset.slot));
  patches[0].after.parkingArea=null;patches[0].after.suspended=false;const absent=E.absenceFor({...patches[0].after,parked:false},studioWork);patches[0].after.absenceReturnFor=absent?.id||null;
  if(old.blockId){for(const partner of studioRows.filter(l=>l.id!==old.id&&l.blockId===old.blockId&&l.date===old.date)){if(partner.locked)throw Error('Сначала снимите закрепление всех уроков спарки');const slot=+td.dataset.slot+(partner.blockOffset||0)-(old.blockOffset||0);if(slot<1||slot>studioSlots)throw Error('Блок уроков не помещается в этот день');patches.push({id:partner.id,before:partner,after:{...partner,...patches[0].after,id:partner.id,slot,blockOffset:partner.blockOffset,...studioTime(partner.classId,td.dataset.date,slot)}})}}
  return patches;
 }
-function studioPlace(td){
+function studioPlace(td,targetId=null){
  if(!studioPick)return;
  try{
   const old=studioRows.find(l=>l.id===studioPick.id);
   if(!SM.targetAllowed(old,studioAxis,td.dataset.entity)){studioHover(td);return}
   if(!old.parked&&!old.suspended&&old.date===td.dataset.date&&old.slot===+td.dataset.slot&&(['classes','general'].includes(studioAxis)||old[studioAxis==='teachers'?'teacherId':'roomId']===td.dataset.entity)){studioCancel();return}
-  const occupants=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).filter(l=>l&&l.id!==old.id&&(!old.blockId||l.blockId!==old.blockId));
-  if(occupants.some(l=>l.classId===old.classId)){
-   studioPopup('Ячейка занята',`<p>${h(studioBrief(old))}</p><p>Выберите действие. При совместном размещении ни один урок не удаляется.</p>`,[{text:'Назад',action:studioClosePopup},{text:'Поменять местами',action:()=>studioConfirm('Обмен уроками',studioPlan(td,'swap'))},{text:'Вытеснить в резерв',action:()=>studioConfirm('Перенос с резервом',studioPlan(td,'stash'))},{text:'Поместить вместе',class:'primary',action:()=>studioConfirm('Совместное размещение',studioPlan(td))}]);
-  }else studioConfirm('Перенос урока',studioPlan(td));
+  const placement=studioPlacement(td,targetId),patches=studioPlan(td,placement.action,targetId);
+  studioConfirm(placement.target?'Обмен уроками':'Перенос урока',patches,placement.target?.id||null);
  }catch(e){message(e.message)}
 }
 function studioPark(area){
@@ -161,7 +182,7 @@ function studioTake(id){
 }
 function studioAvailability(td){
  const key=td.dataset.entity+'|'+td.dataset.date+'|'+td.dataset.slot;
- if(!studioPick.cache.has(key)){try{const r=studioCheck(studioPlan(td));studioPick.cache.set(key,{notes:[...new Set(r.issues.map(x=>x.kind))]})}catch(e){studioPick.cache.set(key,{blocked:true,notes:[e.message]})}}
+ if(!studioPick.cache.has(key)){try{const placement=studioPlacement(td),r=studioCheck(studioPlan(td,placement.action));studioPick.cache.set(key,{notes:[...new Set(r.issues.map(x=>x.kind))]})}catch(e){studioPick.cache.set(key,{blocked:true,notes:[e.message]})}}
  return studioPick.cache.get(key);
 }
 function studioHover(td){
@@ -182,7 +203,14 @@ function studioTray(area,rows){
  const f=studioFilter(area),items=studioFilterRows(area,rows),selectedLabel=f.value?(f.mode==='teacher'?studioTeacher(f.value):f.mode==='subject'?studioSubject({subjectId:f.value}):lookup('classes',f.value)?.name):'';
  const label=l=>f.mode==='teacher'?studioTeacher(l.teacherId):f.mode==='subject'?(lookup('subjects',l.subjectId)?.name||'Предмет'):(lookup('classes',l.classId)?.name||'Класс');
  const button=(mode,text)=>`<button type="button" data-tray-filter="${area}" data-filter-mode="${mode}" class="${f.mode===mode?'active':''}" title="${h(text)}">${h(f.mode===mode&&selectedLabel?text.split(' ')[0]+': '+selectedLabel:text)}</button>`;
- return `<header><strong>${area==='side'?'Снятые':'Неразмещённые'} <span>${items.length}${items.length!==rows.length?' / '+rows.length:''}</span></strong><span class="tray-filter-buttons">${button('all','Все')}${button('class','Классы')}${button('teacher','Учителя')}${button('subject','Предметы')}</span></header><div class="studio-tray-content">${items.map(l=>`<div class="tray-item"><small>${h(label(l))}</small>${card(l)}</div>`).join('')||'<p class="hint">Нет карточек для выбранного фильтра</p>'}</div>`;
+ const item=(l,withLabel=true)=>`<div class="tray-item">${withLabel?`<small>${h(label(l))}</small>`:''}${card(l)}</div>`;
+ // In the default class view every right-hand row mirrors the matching
+ // timetable row.  Keeping empty rows is intentional: a picked card can be
+ // put back opposite its class without first searching in a flat pile.
+ const classRows=area==='side'&&f.mode==='all'&&['classes','general'].includes(studioAxis);
+ const entityIds=new Set(studioEntities.map(e=>e.id)),shown=classRows?items.filter(l=>entityIds.has(l.classId)):items;
+ const content=classRows?studioEntities.map(e=>`<div class="side-line" data-side-class="${h(e.id)}" aria-label="${h(e.name)}" title="${h(e.name)}" style="--row-factor:${studioRowFactor(e,'classes')}">${shown.filter(l=>l.classId===e.id).map(l=>item(l,false)).join('')}</div>`).join(''):(shown.map(l=>item(l)).join('')||'<p class="hint">Нет карточек для выбранного фильтра</p>');
+ return `<header><strong>${area==='side'?'Снятые':'Неразмещённые'} <span>${shown.length}${shown.length!==rows.length?' / '+rows.length:''}</span></strong><span class="tray-filter-buttons">${button('all','Все')}${button('class','Классы')}${button('teacher','Учителя')}${button('subject','Предметы')}</span></header><div class="studio-tray-content${classRows?' side-class-rows':''}"${classRows?' data-class-rows="true"':''}>${content}</div>`;
 }
 function studioFreeRooms(rows,d,slot,teacherId=null){
  const occupied=new Set(rows.filter(l=>!l.cancelled&&!l.parked&&!l.suspended&&l.date===d&&l.slot===slot&&l.roomId).map(l=>l.roomId));
@@ -238,7 +266,7 @@ bindCards=function(){
  }
  $$('[data-lesson]').forEach(b=>{
   b.draggable=false;
-  b.onclick=e=>{if(e.target.closest('[data-room-chip]'))return;if(studioPick){if(b.closest('td'))return; e.stopPropagation();if(b.dataset.lesson===studioPick.id)studioCancel();else studioPark(b.closest('[data-park]').dataset.park);return}e.stopPropagation();if(e.detail>0)studioPointer={x:e.clientX,y:e.clientY};else{const r=b.getBoundingClientRect();studioPointer={x:r.left+r.width/2,y:r.top+r.height/2}}studioTake(b.dataset.lesson)};
+  b.onclick=e=>{if(e.target.closest('[data-room-chip]'))return;if(studioPick){e.stopPropagation();const td=b.closest('td');if(td){studioPlace(td,b.dataset.lesson);return}if(b.dataset.lesson===studioPick.id)studioCancel();else studioPark(b.closest('[data-park]').dataset.park);return}e.stopPropagation();if(e.detail>0)studioPointer={x:e.clientX,y:e.clientY};else{const r=b.getBoundingClientRect();studioPointer={x:r.left+r.width/2,y:r.top+r.height/2}}studioTake(b.dataset.lesson)};
   b.oncontextmenu=e=>{e.preventDefault();studioCancel();if(['teachers','rooms'].includes(studioAxis))studioRoomEditor(b.dataset.lesson);else showLesson(b.dataset.lesson)};
   b.querySelector('[data-room-chip]')?.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();studioCancel();studioRoomMenu(e.currentTarget,b.dataset.lesson)});
  });
@@ -254,16 +282,22 @@ function studioBindTrayFilters(){
  $$('[data-tray-filter]').forEach(button=>button.onclick=e=>{e.stopPropagation();const area=button.dataset.trayFilter,mode=button.dataset.filterMode;if(mode==='all'){studioFilters[area]={mode:'all',value:''};render();return}studioOpenTrayMenu(button,area,mode)});
 }
 function studioOpenTrayMenu(anchor,area,mode){
- document.querySelector('#studio-filter-menu')?.remove();const rows=mode==='class'?db.classes:mode==='teacher'?db.teachers:db.subjects,current=studioFilter(area);
- const menu=document.createElement('div');menu.id='studio-filter-menu';menu.setAttribute('role','menu');menu.innerHTML=`<strong>${mode==='class'?'Выберите класс':mode==='teacher'?'Выберите учителя':'Выберите предмет'}</strong><div>${rows.map(x=>`<button type="button" role="menuitem" data-filter-value="${h(x.id)}" class="${current.mode===mode&&current.value===x.id?'active':''}">${h(mode==='teacher'?studioTeacher(x.id):mode==='subject'?studioSubject({subjectId:x.id}):x.name)}</button>`).join('')}</div>`;
+ document.querySelector('#studio-filter-menu')?.remove();const source=mode==='class'?db.classes:mode==='teacher'?db.teachers:db.subjects,current=studioFilter(area);
+ const title=mode==='class'?'Выберите класс':mode==='teacher'?'Выберите учителя':'Выберите предмет';
+ const rows=source.map(x=>({x,text:mode==='teacher'?studioTeacher(x.id):mode==='subject'?studioSubject({subjectId:x.id}):x.name})).sort((a,b)=>a.text.localeCompare(b.text,'ru',{numeric:true,sensitivity:'base'}));
+ // Fill down the columns and add as many columns as the viewport needs.  The
+ // menu never becomes a second scrolling area: every option remains visible.
+ const stride=29,chrome=44,maxRows=Math.max(1,Math.floor((innerHeight-12-chrome)/stride)),columns=Math.max(1,Math.ceil(rows.length/maxRows)),menuRows=Math.max(1,Math.ceil(rows.length/columns)),ideal=mode==='teacher'?190:mode==='subject'?170:105;
+ const menu=document.createElement('div');menu.id='studio-filter-menu';menu.dataset.filterMode=mode;menu.setAttribute('role','menu');menu.setAttribute('aria-label',title);menu.style.setProperty('--filter-columns',columns);menu.style.setProperty('--filter-rows',menuRows);menu.style.width=Math.min(innerWidth-12,Math.max(180,columns*ideal+14))+'px';menu.innerHTML=`<strong>${title}</strong><div>${rows.map(({x,text})=>`<button type="button" role="menuitem" data-filter-value="${h(x.id)}" title="${h(text)}" class="${current.mode===mode&&current.value===x.id?'active':''}">${h(text)}</button>`).join('')}</div>`;
  document.body.append(menu);const r=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.left=Math.max(6,Math.min(r.left,innerWidth-box.width-6))+'px';menu.style.top=Math.max(6,Math.min(r.bottom+3,innerHeight-box.height-6))+'px';
- menu.querySelectorAll('[data-filter-value]').forEach(b=>b.onclick=()=>{studioFilters[area]={mode,value:b.dataset.filterValue};menu.remove();render()});menu.querySelector('button')?.focus();
- const close=e=>{if(!menu.contains(e.target)&&e.target!==anchor){menu.remove();document.removeEventListener('pointerdown',close,true)}};setTimeout(()=>document.addEventListener('pointerdown',close,true));
+ const dispose=()=>{menu.remove();document.removeEventListener('pointerdown',close,true);document.removeEventListener('keydown',escape,true)},close=e=>{if(!menu.contains(e.target)&&e.target!==anchor)dispose()},escape=e=>{if(e.key==='Escape')dispose()};
+ menu.querySelectorAll('[data-filter-value]').forEach(b=>b.onclick=()=>{studioFilters[area]={mode,value:b.dataset.filterValue};dispose();render()});menu.querySelector('button')?.focus();
+ setTimeout(()=>{document.addEventListener('pointerdown',close,true);document.addEventListener('keydown',escape,true)});
 }
 function studioRoomEditor(id){
  const old=studioRows.find(l=>l.id===id);if(!old)return;
  const rooms=studioRoomChoices(old);
- dialog('Кабинет · '+studioBrief(old),`<label class="field">Назначение кабинета<select id="studio-quick-room"><option value="__auto" ${old.roomMode!=='manual'?'selected':''}>Подобрать автоматически</option><option value="__none" ${old.roomMode==='manual'&&!old.roomId?'selected':''}>Нет</option>${rooms.map(({room,free})=>`<option value="${h(room.id)}" ${old.roomId===room.id&&old.roomMode==='manual'?'selected':''}>${h(PrintTools.roomNumber(room.name)||room.name)} · ${free?'свободен':'занят'}</option>`).join('')}</select></label><p class="hint"><span class="room-free-key">Свободные кабинеты отмечены зелёным</span>. «Нет» сохраняет урок без кабинета; автоподбор использует правила учителя.</p>`,[{text:'Полное редактирование',action:()=>showLesson(id)},{text:'Сохранить кабинет',class:'primary',action:()=>{const value=$('#studio-quick-room').value,automatic=value==='__auto',roomId=automatic||value==='__none'?null:value;studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:automatic?'auto':'manual'}}])}}]);
+ dialog('Кабинет · '+studioBrief(old),`<label class="field">Назначение кабинета<select id="studio-quick-room"><option value="__auto" ${old.roomMode!=='manual'?'selected':''}>Подобрать автоматически</option><option value="__none" ${old.roomMode==='manual'&&!old.roomId?'selected':''}>Нет</option>${rooms.map(({room,free})=>`<option value="${h(room.id)}" ${old.roomId===room.id&&old.roomMode==='manual'?'selected':''}>${h(PrintTools.roomNumber(room.name)||room.name)} · ${free?'свободен':'занят'}</option>`).join('')}</select></label><p class="hint"><span class="room-free-key">Свободные кабинеты отмечены зелёным</span>. «Нет» сохраняет урок без кабинета; автоподбор использует правила учителя.</p>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Полное редактирование',action:()=>showLesson(id)},{text:'Сохранить кабинет',class:'primary',action:()=>{const value=$('#studio-quick-room').value,automatic=value==='__auto',roomId=automatic||value==='__none'?null:value;studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:automatic?'auto':'manual'}}])}}]);
 }
 function studioRoomChoices(old){
  const rooms=[...db.rooms].sort((a,b)=>(PrintTools.roomNumber(a.name)||a.name).localeCompare(PrintTools.roomNumber(b.name)||b.name,'ru',{numeric:true,sensitivity:'base'}));

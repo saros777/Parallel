@@ -16,3 +16,9 @@
  .studio-matrix .studio-stack>.studio-card.lesson{font-size:clamp(6px,min(16px,calc(85cqh / var(--parts,1)),calc((100cqw - 3px) / var(--text-em,1.8))),16px)!important}
 }
 .teacher-list button>span{min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.teacher-list button>small{flex-shrink:0;margin-left:8px}.teacher-course-table small{display:block;color:var(--muted)}
+.teacher-room-summary{display:inline-block;margin:0 0 8px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;background:var(--soft);font-size:12px}.teacher-room-summary strong{color:var(--text)}
+/* Directory columns follow their contents instead of stretching across the
+   whole window. Scrolling appears only when the content truly exceeds it. */
+#view>.table-wrap,.teacher-detail>.table-wrap{display:block;width:fit-content;max-width:100%;overflow:auto}
+.directory-editor-table,.teacher-detail .teacher-course-table{width:max-content!important;max-width:100%;table-layout:auto!important}
+.directory-editor-table th,.directory-editor-table td,.teacher-course-table th,.teacher-course-table td{width:auto!important;white-space:nowrap;padding:7px 9px}

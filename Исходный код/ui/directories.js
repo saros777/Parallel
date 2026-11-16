@@ -5,6 +5,10 @@ function directoryHead(c){return db.teachers.find(t=>t.id===c.classHeadId)?.name
 function directoryHours(subjectId,teacherId){return db.courses.filter(c=>(!subjectId||c.subjectId===subjectId)&&(!teacherId||c.teacherId===teacherId)&&(!subjectId||c.teacherId||!db.courses.some(x=>x.classId===c.classId&&x.subjectId===c.subjectId&&x.teacherId))).reduce((n,c)=>n+(+c.weeklyHours||0),0)}
 function directorySlots(t){return t.allowedSlots?.join(', ')||'Любые'}
 function directoryRoom(c){const id=c.homeRoomId||settings.roomPolicy?.classRooms?.[c.id]?.[0];return id?PrintTools.roomNumber(roomName(id)):'—'}
+function directoryFixedRoomTeachers(roomId){
+ const policy=settings.roomPolicy||{};
+ return db.teachers.filter(t=>{const rule=policy.teacherRules?.[t.id];return rule?rule.mode==='fixed'&&rule.rooms?.[0]===roomId:policy.teacherRooms?.[t.id]===roomId});
+}
 renderDirectory=function(){
  $('#heading-actions').innerHTML=`<button id="directory-add" class="primary">Добавить</button>`;
  $('#controls').innerHTML=`<div class="directory-tabs">${Object.entries(directoryNames).map(([k,n])=>`<button data-dir-tab="${k}" class="${studioDirectory===k?'primary':''}">${n}</button>`).join('')}</div>`;
@@ -14,7 +18,7 @@ renderDirectory=function(){
   if(studioDirectory==='classes')return [x.name,x.pupilCount??x.sourcePupilCount??0,directoryHead(x),directoryRoom(x)];
   if(studioDirectory==='groups')return [lookup('classes',x.classId)?.name||'—',x.name,lookup('subjects',x.subjectId)?.name||'—',x.level||'Базовый'];
   if(studioDirectory==='teachers')return [x.name,studioTeacher(x.id),{color:x.color||W.teacherColor(x.id,db)},directoryHours(null,x.id),(x.workDays||[1,2,3,4,5]).map(d=>days[d]).join(', '),directorySlots(x)];
-  if(studioDirectory==='rooms')return [x.name,x.capacity??'—',db.teachers.filter(t=>settings.roomPolicy?.teacherRooms?.[t.id]===x.id).map(t=>studioTeacher(t.id)).join(', ')||'—'];
+  if(studioDirectory==='rooms')return [x.name,x.capacity??'—',directoryFixedRoomTeachers(x.id).map(t=>studioTeacher(t.id)).join(', ')||'—'];
   return [x.name,settings.labels[x.id]||x.abbreviation||'—',directoryHours(x.id)];
  }
  $('#view').innerHTML=`<div class="directory-tools"><input id="studio-directory-search" type="search" placeholder="Поиск" aria-label="Поиск по справочнику" value="${h(studioSearch)}"><span class="hint">${rows.length} записей · изменения сохраняются автоматически</span></div><div class="table-wrap"><table class="data-table directory-editor-table"><thead><tr>${columns.map(c=>`<th>${c}</th>`).join('')}<th></th></tr></thead><tbody>${rows.map(x=>`<tr>${cells(x).map(v=>`<td>${v&&typeof v==='object'?`<span class="color-chip" style="background:${h(v.color)}" aria-label="Цвет учителя"></span>`:h(v)}</td>`).join('')}<td><button data-dir-edit="${h(x.id)}">Изменить</button></td></tr>`).join('')}</tbody></table></div>`;
@@ -31,7 +35,7 @@ function editDirectory(kind,id=null,initial={},back=null){
  if(kind==='classes')body=dirInput('name','Название класса',old.name)+dirInput('count','Количество учеников',old.pupilCount??old.sourcePupilCount??0,'number','min="0" max="100"')+dirSelect('head','Классный руководитель',db.teachers,old.classHeadId||db.teachers.find(t=>t.name===old.classHeadName)?.id,'Не назначен')+dirSelect('room','Закреплённый кабинет',db.rooms,old.homeRoomId||settings.roomPolicy?.classRooms?.[old.id]?.[0],'Не закреплён');
  if(kind==='groups')body=dirSelect('class','Класс',db.classes,old.classId)+dirInput('name','Название подгруппы / профиля',old.name)+dirInput('short','Краткое название',old.shortName)+dirSelect('subject','Предмет деления',db.subjects,old.subjectId)+dirInput('level','Уровень',old.level||'Базовый');
  if(kind==='teachers')body=dirInput('name','ФИО',old.name)+dirInput('short','Фамилия и инициалы',old.shortName||short(old.name||''))+dirInput('color','Цвет карточек',old.color||'#91b4dd','color')+dirInput('slots','Разрешённые уроки (например, 3-5 или 1, 3, 5)',old.allowedSlots?.join(', ')||'1-8')+`<div class="full"><p>Рабочие дни</p><div class="week-days">${[1,2,3,4,5,6,0].map(d=>`<label><input type="checkbox" data-work-day="${d}" ${(old.workDays||[1,2,3,4,5]).includes(d)?'checked':''}>${days[d]}</label>`).join('')}</div></div><label>Правило кабинета<select id="dir-room-mode"><option value="preferred" ${roomRule.mode!=='fixed'?'selected':''}>Приоритетный порядок</option><option value="fixed" ${roomRule.mode==='fixed'?'selected':''}>Строго один кабинет</option></select></label>${dirInput('room-priority','Кабинеты по приоритету',roomNumbers(roomRule.rooms),'text','placeholder="Например: 2, 3, 15"')}${dirInput('room-forbidden','Запрещённые кабинеты',roomNumbers(roomRule.forbidden),'text','placeholder="Например: 8, 9"')}<p class="hint full">Пустые поля необязательны. Приоритет задаётся слева направо. Автоподбор старается не переводить учителя между кабинетами в течение дня.</p>`;
- if(kind==='rooms')body=dirInput('name','Название',old.name)+dirInput('capacity','Вместимость',old.capacity??0,'number','min="0" max="1000"')+dirSelect('teacher','Закреплённый учитель',db.teachers,db.teachers.find(t=>settings.roomPolicy?.teacherRooms?.[t.id]===old.id)?.id,'Не закреплён');
+ if(kind==='rooms')body=dirInput('name','Название',old.name)+dirInput('capacity','Вместимость',old.capacity??0,'number','min="0" max="1000"')+dirSelect('teacher','Строго закреплённый учитель',db.teachers,directoryFixedRoomTeachers(old.id)[0]?.id,'Не закреплён');
  if(kind==='subjects')body=dirInput('name','Название предмета',old.name)+dirInput('short','Сокращение',settings.labels[old.id]||old.abbreviation);
  let extra='';
  if(kind==='classes'&&id){const gs=db.groups.filter(g=>g.classId===id);extra=`<div class="inline-tools"><h3>Подгруппы / профили</h3><button id="dir-add-group">Добавить подгруппу</button></div><table class="teacher-courses">${gs.map(g=>`<tr><td>${h(g.name)}</td><td>${h(lookup('subjects',g.subjectId)?.name)}</td><td><button data-edit-group="${g.id}">Изменить</button></td></tr>`).join('')}</table>`}
@@ -61,7 +65,7 @@ function editDirectory(kind,id=null,initial={},back=null){
     if(kind==='groups')db.courses.forEach(c=>{if(c.groupId===next.id){Object.assign(c,{classId:next.classId,subjectId:next.subjectId,groupName:next.name,level:next.level,studioEdited:true})}});
     if(kind==='rooms'){
      const p=settings.roomPolicy;p.teacherRooms??={};p.teacherRules??={};
-     for(const [t,r]of Object.entries(p.teacherRooms))if(r===next.id){delete p.teacherRooms[t];delete p.teacherRules[t]}
+     for(const t of db.teachers){const rule=p.teacherRules[t.id];if(rule?rule.mode==='fixed'&&rule.rooms?.[0]===next.id:p.teacherRooms[t.id]===next.id){delete p.teacherRooms[t.id];delete p.teacherRules[t.id]}}
      if(selectedRoomTeacher){p.teacherRooms[selectedRoomTeacher]=next.id;p.teacherRules[selectedRoomTeacher]={mode:'fixed',rooms:[next.id]}}
     }
    });

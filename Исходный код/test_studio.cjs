@@ -35,6 +35,7 @@ db=fixture();const gridLesson=db.lessons[0];
 assert(!E.overlap(gridLesson,{...gridLesson,id:'free',slot:5,time:gridLesson.time}),'different columns cannot collide because of copied bell text');
 assert(E.overlap(gridLesson,{...gridLesson,id:'busy',time:''}),'same column remains occupied without bell text');
 assert(E.overlap(gridLesson,{...gridLesson,id:'busy2',time:'23:00 - 23:45'}),'same column cannot look free because the clock text differs');
+assert(!E.overlap({...gridLesson,cycleWeeks:2,cyclePhase:0},{...gridLesson,id:'other-phase',cycleWeeks:2,cyclePhase:1}),'alternating biweekly phases do not occupy the same actual lesson');
 const emptyMove={id:gridLesson.id,before:gridLesson,after:{...gridLesson,slot:4,time:''}};
 assert.deepEqual(W.assess(db,[emptyMove]).issues,[],'empty column is valid when bell time is unknown');
 assert(S.targetAllowed(gridLesson,'classes','c'));assert(!S.targetAllowed(gridLesson,'classes','other'));
