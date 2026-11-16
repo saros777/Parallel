@@ -120,13 +120,9 @@ function studioPlacement(td,targetId=null){
  // Complementary subgroups share a slot. Clicking such a card must not
  // displace it; only an overlapping lesson is exchanged.
  const target=exact&&!E.disjoint(old,exact,db)?exact:(overlapping[0]||null);
- // Availability is defined by the visible lesson column, not by bell text.
- // A lesson that is about to be displaced by this exact swap does not make
- // its own cell busy: after the exchange it is attached to the pointer.
- // Other lessons of the selected teacher still block the column.
- const displacedIds=new Set(target?[target.id]:[]);
- const busy=probes.find(probe=>probe.teacherId&&studioRows.some(l=>!memberIds.has(l.id)&&!displacedIds.has(l.id)&&l.teacherId===probe.teacherId&&E.overlap(probe,l)));
- if(busy)throw Error('Учитель уже занят на этом уроке');
+ // Teacher occupancy is deliberately not a hard placement restriction.
+ // The final-state assessment reports it as a red warning and lets the user
+ // place the card after confirmation.  This also keeps ordinary swaps usable.
  if(target?.locked)throw Error('Целевой урок закреплён. Сначала снимите закрепление');
  if(target?.blockId||members.length>1&&target)throw Error('Спарку можно обменивать только целиком');
  return {old,members,target,action:target?'swap':'together'};
@@ -166,7 +162,7 @@ function studioTake(id){
  studioPositionGhost();
  $$('[data-lesson]').filter(e=>e.dataset.lesson===id).forEach(e=>e.classList.add('picked'));
  const key=studioAxis==='teachers'?'teacherId':studioAxis==='rooms'?'roomId':'classId';
- $$('[data-row-head]').forEach(e=>{e.classList.toggle('target-ok',e.dataset.rowHead===l[key]);e.classList.toggle('target-block',e.dataset.rowHead!==l[key])});
+ $$('[data-row-head]').forEach(e=>{e.classList.remove('target-ok','target-bad','target-block');if(e.dataset.rowHead===l[key])e.classList.add('target-ok')});
  const pickup=studioPick,heads=$$('[data-col-head]');let nextHead=0;
  heads.forEach(head=>head.classList.add('target-pending'));
  // Yield between columns so picking up a card never waits for the whole week.
@@ -175,7 +171,7 @@ function studioTake(id){
   const started=performance.now();
   do{const head=heads[nextHead++],[d,n]=head.dataset.colHead.split('|');
    const td=$(`[data-entity="${l[key]}"][data-date="${d}"][data-slot="${n}"]`);
-   if(td){const result=studioAvailability(td);head.classList.remove('target-pending');head.classList.add(result.blocked?'target-block':result.notes.length?'target-bad':'target-ok')}
+   if(td){const result=studioAvailability(td);head.classList.remove('target-pending');if(!result.blocked)head.classList.add(result.notes.length?'target-bad':'target-ok')}
   }while(nextHead<heads.length&&performance.now()-started<4);
   if(nextHead<heads.length)requestAnimationFrame(paintNext);
  };
@@ -189,10 +185,11 @@ function studioAvailability(td){
 }
 function studioHover(td){
  if(!studioPick)return;
- const r=studioAvailability(td),state=r.blocked?'target-block':r.notes.length?'target-bad':'target-ok';
- const head=$(`[data-col-head="${td.dataset.date}|${td.dataset.slot}"]`);if(!r.blocked){head?.classList.remove('target-ok','target-bad','target-pending');head?.classList.add(state)}
- const row=td.parentElement.firstElementChild;if(!r.blocked){row.classList.remove('target-ok','target-bad');row.classList.add(state)}
- studioGhost?.classList.toggle('conflict',!!r.notes.length&&!r.blocked);
+ const old=studioRows.find(l=>l.id===studioPick.id),allowed=old&&SM.targetAllowed(old,studioAxis,td.dataset.entity);
+ const r=studioAvailability(td),state=r.notes.length?'target-bad':'target-ok';
+ const head=$(`[data-col-head="${td.dataset.date}|${td.dataset.slot}"]`),row=td.parentElement.firstElementChild;
+ if(allowed&&!r.blocked){head?.classList.remove('target-ok','target-bad','target-block','target-pending');head?.classList.add(state);row.classList.remove('target-ok','target-bad','target-block');row.classList.add(state)}
+ studioGhost?.classList.toggle('conflict',allowed&&!r.blocked&&!!r.notes.length);
  if(studioGhost)studioGhost.querySelector('small').textContent=r.notes.join('; ')||'Клик — разместить';
 }
 function studioFilter(area){const current=studioFilters[area];return typeof current==='string'?studioFilters[area]={mode:current,value:''}:current}

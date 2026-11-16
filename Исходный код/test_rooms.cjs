@@ -17,6 +17,8 @@ d=fixture();d.lessons=[lesson('a','t1',1),lesson('a2','t1',2),lesson('b','t2',1)
 rows=E.effective(d);assert.equal(rows.find(x=>x.id==='a').roomId,'r2');assert.equal(rows.find(x=>x.id==='a2').roomId,'r2','teacher stays in the same room when possible');assert.notEqual(rows.find(x=>x.id==='a').roomId,'r3','forbidden room excluded');
 d=fixture();d.preferences.roomPolicy.pool=['r1'];d.preferences.roomPolicy.teacherRooms={};
 rows=E.effective(d);assert.equal(rows.filter(x=>!x.roomId).length,2);assert.equal(E.conflicts(d,rows).filter(x=>x.kind==='Нет свободного кабинета').length,2);
+d=fixture();d.preferences.roomPolicy.teacherRules={t1:{mode:'fixed',rooms:['r1']},t2:{mode:'fixed',rooms:['r1']}};
+rows=E.effective(d);assert.equal(rows.find(x=>x.id==='a').roomId,'r1');assert.equal(rows.find(x=>x.id==='b').roomId,null,'second fixed-room collision clears the room number');
 d=fixture();d.lessons[1].groupName='1';d.lessons[2].groupName='2';d.lessons[2].classId='b';rows=E.effective(d);
 assert.notEqual(rows[1].roomId,rows[2].roomId);
 d=fixture();d.overrides.b={cancelled:true};d.absences=[{teacherId:'t1',startDate:'2026-09-21',endDate:'2026-09-21'}];

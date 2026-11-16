@@ -17,7 +17,7 @@ d.courses=[];assert.equal(W.assignment(d,d.lessons[0]).teacherId,'a');
 assert.equal(W.teacherColor('a',d),W.teacherColor('a',d));assert.notEqual(W.teacherColor('a',d),W.teacherColor('b',d));
 d=fixture();d.lessons[1].slot=1;d.lessons[1].time=d.lessons[0].time;d.lessons[1].classId='d';d.lessons.pop();
 d.preferences.roomPolicy.teacherRules={a:{mode:'fixed',rooms:['r1']},b:{mode:'fixed',rooms:['r1']}};
-let rows=E.effective(d);assert.equal(rows[0].roomId,'r1');assert.equal(rows[1].roomId,'r1');assert(E.conflicts(d).some(i=>i.kind.includes('Кабинет')));
+let rows=E.effective(d);assert.equal(rows[0].roomId,'r1');assert.equal(rows[1].roomId,null);assert(!E.conflicts(d).some(i=>i.kind==='Кабинет занят одновременно'));
 d.preferences.roomPolicy.teacherRules={a:{mode:'fixed',rooms:['r1']},b:{mode:'preferred',rooms:['r1','r2']}};
 rows=E.effective(d);assert.equal(rows[1].roomId,'r2');
 d.preferences.roomPolicy.teacherRules.b.rooms=[];d.preferences.roomPolicy.classRooms={d:['r3','r2']};

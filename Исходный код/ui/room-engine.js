@@ -78,9 +78,10 @@
     l.roomId=null;l.roomReason='Нет свободного кабинета';
     if(l.cancelled||l.parked||l.suspended){l.roomId=first||null;l.roomReason='Урок вне сетки не занимает кабинет';continue}
     if(rule(l).mode==='fixed'){
-     l.roomId=roomIds.has(rule(l).rooms?.[0])?rule(l).rooms[0]:null;
-     l.roomReason=l.roomId?(free(l.roomId,l)?'Жёсткое закрепление за учителем':'Жёсткое закрепление: кабинет занят, требуется решение'):'Жёсткое закрепление: кабинет не задан';
-     reserve(l);
+     const fixed=roomIds.has(rule(l).rooms?.[0])?rule(l).rooms[0]:null;
+     l.roomId=fixed&&free(fixed,l)?fixed:null;
+     l.roomReason=l.roomId?'Жёсткое закрепление за учителем':fixed?'Жёсткое закрепление: кабинет занят, номер очищен':'Жёсткое закрепление: кабинет не задан';
+     if(l.roomId)reserve(l);
     }else fallback.push(l);
    }
    for(const l of fallback){
