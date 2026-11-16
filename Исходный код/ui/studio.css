@@ -21,10 +21,10 @@
 .studio-matrix th,.studio-matrix td{padding:0;border:1px solid var(--line);overflow:hidden;vertical-align:middle;position:static;min-width:0}
 .studio-matrix th{background:var(--surface);font-weight:600;text-align:center;white-space:nowrap;text-overflow:ellipsis}
 .studio-matrix thead tr{height:18px}.studio-matrix thead small{font-size:9px;font-weight:400}
-.studio-matrix tbody tr{height:var(--row-height)}.studio-matrix tbody th{font-size:10px}
+.studio-matrix tbody tr{height:var(--entity-row-height,var(--row-height))}.studio-matrix tbody th{font-size:10px}
 .studio-matrix td.day-start{border-left:2px solid #90a6bc}
-.studio-stack{display:flex;flex-direction:column;height:var(--row-height);max-height:var(--row-height);overflow:hidden;gap:0}
-.studio-card.lesson{display:block!important;background:var(--subject-color)!important;color:#172c44!important;border:0;border-radius:0;box-shadow:none;margin:0!important;padding:0 1px!important;width:100%;min-width:0;min-height:0!important;max-height:100%;height:calc(100% / var(--parts,1));flex:1 1 0;overflow:hidden;text-overflow:clip;white-space:nowrap;font-size:inherit!important;line-height:1!important;text-align:left;font-weight:400}
+.studio-stack{display:grid;grid-template-rows:repeat(var(--parts,1),minmax(0,1fr));height:var(--entity-row-height,var(--row-height));max-height:var(--entity-row-height,var(--row-height));overflow:hidden;gap:0}
+.studio-card.lesson{display:block!important;background:var(--subject-color)!important;color:#172c44!important;border:0;border-bottom:1px solid #60758a55;border-radius:0;box-shadow:none;margin:0!important;padding:0 1px!important;width:100%;min-width:0;min-height:0!important;max-height:100%;height:100%;overflow:hidden;text-overflow:clip;white-space:nowrap;font-size:inherit!important;line-height:1!important;text-align:left;font-weight:400}.studio-stack>:last-child{border-bottom:0}.studio-lane-empty{display:block;min-width:0;min-height:0;background:#f3f6fa;border-bottom:1px solid #60758a55}
 .studio-card-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.studio-room-chip{flex:0 0 auto;min-width:16px;margin-left:2px;padding:1px 3px;border:1px solid #34506e;border-radius:3px;background:#fff;color:#17334d;font-size:max(8px,.78em);line-height:1.15;cursor:pointer;font-variant-numeric:tabular-nums}.studio-room-chip:hover{background:#dce9ff}
 .studio-card.lesson.forced{box-shadow:none}.studio-card.lesson.picked{outline:2px dashed #245acf;outline-offset:-2px;opacity:1}
 .studio-matrix th.target-ok{background:#c3ead6;color:#124e2e}.studio-matrix th.target-bad{background:#f7c5cd;color:#881f31}.studio-matrix th.target-block{background:#ccd1d8;color:#555}
