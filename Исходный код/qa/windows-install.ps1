@@ -1,11 +1,11 @@
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$msi = Join-Path $root 'dist\Parallel-5.4.9-x64.msi'
+$msi = Join-Path $root 'dist\Parallel-5.4.10-x64.msi'
 $install = Join-Path $env:LOCALAPPDATA 'Programs\ParallelDesktop'
 $data = Join-Path $env:LOCALAPPDATA 'ParallelSchool'
 $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 $report = [ordered]@{
-    version = '5.4.9'; sourceCommit = (git -C $root rev-parse HEAD)
+    version = '5.4.10'; sourceCommit = (git -C $root rev-parse HEAD)
     os = [Environment]::OSVersion.VersionString
     installerFormat = 'Windows Installer MSI'; installerScripts = 'none'
     applicationSignature = 'NotSigned: no publisher code-signing certificate provided'
@@ -25,7 +25,7 @@ function Invoke-Msi([string]$Operation, [string]$LogName) {
         throw "MSI $Operation failed with exit $($p.ExitCode)"
     }
 }
-$project = Join-Path $env:RUNNER_TEMP 'Parallel-5.4.9-School.parallel'
+$project = Join-Path $env:RUNNER_TEMP 'Parallel-5.4.10-School.parallel'
 function Write-Fixture([string]$Marker = '') {
     $rawPath = Join-Path $env:RUNNER_TEMP 'parallel-fixture-state.json'
     node (Join-Path $PSScriptRoot 'project-fixture.cjs') $rawPath
@@ -122,7 +122,7 @@ try {
     }
     Scan-Path $install
     $report.checks.msiInstallAndInstalledPayloadScan = 'passed'
-    $appZip = Join-Path $root 'dist\Parallel-5.4.9-App.zip'
+    $appZip = Join-Path $root 'dist\Parallel-5.4.10-App.zip'
     Compress-Archive -LiteralPath @((Join-Path $root 'dist\Parallel.exe'),(Join-Path $root 'dist\MicrosoftEdgeWebview2Setup.exe'),(Join-Path $root 'build\windows\README-app.txt')) -DestinationPath $appZip
     Scan-Path $appZip
     $unpacked = Join-Path $env:RUNNER_TEMP 'parallel-without-install'
@@ -134,8 +134,8 @@ try {
 
     Write-Fixture
     Write-Output '::notice title=Schedule fixture::Full original database prepared'
-    Copy-Item -LiteralPath $project -Destination (Join-Path $root 'dist\Parallel-5.4.9-School.parallel')
-    Scan-Path (Join-Path $root 'dist\Parallel-5.4.9-School.parallel')
+    Copy-Item -LiteralPath $project -Destination (Join-Path $root 'dist\Parallel-5.4.10-School.parallel')
+    Scan-Path (Join-Path $root 'dist\Parallel-5.4.10-School.parallel')
     Run-NativeWindow
     Run-NativeWindow -Warm
     Run-NativeWindow -Warm -Executable (Join-Path $unpacked 'Parallel.exe') -RunLabel 'withoutInstallationLaunch'
@@ -163,7 +163,7 @@ try {
     if ($threats.Count) { throw "Defender recorded detections: $(($threats | ForEach-Object ThreatName) -join ', ')" }
     $report.verdict = 'All specified checks passed in this environment. This does not clear the reported 5.1 detection or guarantee identical results on another device.'
     $report.completedUtc = [DateTime]::UtcNow.ToString('o')
-    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'dist\Parallel-5.4.9-Verification.json') -Encoding utf8NoBOM
+    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'dist\Parallel-5.4.10-Verification.json') -Encoding utf8NoBOM
 } catch {
     $message = $_.Exception.Message -replace '[\r\n]+',' '
     Write-Output "::error title=Windows installer validation failed::$message"

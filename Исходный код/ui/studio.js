@@ -114,17 +114,19 @@ function studioPlacement(td,targetId=null){
  if(members.some(l=>l.locked))throw Error('Сначала снимите закрепление всех уроков спарки');
  const targetDate=td.dataset.date,targetSlot=+td.dataset.slot,probes=members.map(l=>({...l,date:targetDate,slot:targetSlot+(l.blockOffset||0)-(old.blockOffset||0),parked:false,suspended:false}));
  if(probes.some(l=>l.slot<1||l.slot>studioSlots))throw Error('Блок уроков не помещается в этот день');
- // Availability is defined by the visible lesson column, not by bell text.
- // E.overlap also keeps alternate biweekly phases independent. The selected
- // teacher must be free for every member of a paired block.
- const busy=probes.find(probe=>probe.teacherId&&studioRows.some(l=>!memberIds.has(l.id)&&l.teacherId===probe.teacherId&&E.overlap(probe,l)));
- if(busy)throw Error('Учитель уже занят на этом уроке');
  const occupants=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).filter(l=>l&&!memberIds.has(l.id)&&!l.cancelled&&!l.parked&&!l.suspended&&l.classId===old.classId);
  const exact=targetId?occupants.find(l=>l.id===targetId):null,overlapping=occupants.filter(l=>!E.disjoint(old,l,db));
  if(overlapping.length>1)throw Error('В ячейке несколько подгрупп. Перемещайте их отдельно');
  // Complementary subgroups share a slot. Clicking such a card must not
  // displace it; only an overlapping lesson is exchanged.
  const target=exact&&!E.disjoint(old,exact,db)?exact:(overlapping[0]||null);
+ // Availability is defined by the visible lesson column, not by bell text.
+ // A lesson that is about to be displaced by this exact swap does not make
+ // its own cell busy: after the exchange it is attached to the pointer.
+ // Other lessons of the selected teacher still block the column.
+ const displacedIds=new Set(target?[target.id]:[]);
+ const busy=probes.find(probe=>probe.teacherId&&studioRows.some(l=>!memberIds.has(l.id)&&!displacedIds.has(l.id)&&l.teacherId===probe.teacherId&&E.overlap(probe,l)));
+ if(busy)throw Error('Учитель уже занят на этом уроке');
  if(target?.locked)throw Error('Целевой урок закреплён. Сначала снимите закрепление');
  if(target?.blockId||members.length>1&&target)throw Error('Спарку можно обменивать только целиком');
  return {old,members,target,action:target?'swap':'together'};
