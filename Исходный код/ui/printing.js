@@ -6,7 +6,7 @@ showPrint=function(initialView){
  const loadDay=()=>dayRows=E.sortProfileRows(E.effectiveBetween(db,printDate,printDate).filter(l=>!l.cancelled&&!l.parked&&!l.suspended),db);loadDay();
  let classes=[],rows=[],pageGroups=[];
  const checked=k=>prefs[k]?'checked':'';
- dialog('Печать A4 · версия 5.4.7',`<div class="print-presets">
+ dialog('Печать A4 · версия 5.4.8',`<div class="print-presets">
  <button data-print-preset="portrait"><strong>1. Книжный · 1 лист</strong><span>Все классы · предмет + номер</span></button>
  <button data-print-preset="sections"><strong>2. Книжный · крупнее</strong><span>По ступеням · до 3 листов</span></button>
  <button data-print-preset="landscape"><strong>3. Альбомный · 1 лист</strong><span>Дополнительный компактный вариант</span></button>
@@ -37,7 +37,7 @@ showPrint=function(initialView){
    await document.fonts.ready;
    $('#print-fit-status').textContent='Готовлю PDF с фиксированным размером A4…';
    const doc=new jspdf.jsPDF({orientation:prefs.orientation,unit:'mm',format:'a4',compress:true});
-   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.7'});
+   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.8'});
    const width=(prefs.orientation==='portrait'?210:297)-prefs.margin*2;
    const sheets=$$('#paper-preview .print-compact-sheet');
    for(let i=0;i<sheets.length;i++){
@@ -80,9 +80,10 @@ showPrint=function(initialView){
  }
  function line(entry){
   const l=entry.lesson;
-  if(!l)return `<div class="print-slot-line print-slot-empty" aria-hidden="true">&nbsp;</div>`;
+  const position=`grid-row:${(entry.start??0)+1}/span ${entry.span||1}`;
+  if(!l)return `<div class="print-slot-line print-slot-empty" style="${position}" aria-hidden="true">&nbsp;</div>`;
   const group=l.groupName&&!l.profileAudience?.length&&!db.subjects.some(s=>s.name===l.groupName)?PrintTools.groupLabel(l.groupName):'';
-  return `<div class="print-slot-line"><div class="print-primary-line"><strong>${prefs.subject?h(displaySubject(l,prefs.abbreviate)):''}${prefs.view==='teachers'&&prefs.className?' '+h(lookup('classes',l.classId)?.name):''}</strong>${prefs.room?`<span class="print-room">${h(PrintTools.roomNumber(l.roomId?roomName(l.roomId):''))}</span>`:''}</div>${prefs.teacher&&prefs.view!=='teachers'?`<div class="print-secondary">${h(short(teacherName(l.teacherId)))}</div>`:''}${prefs.group&&group?`<div class="print-secondary">${h(group)}</div>`:''}</div>`;
+  return `<div class="print-slot-line" style="${position}"><div class="print-primary-line"><strong>${prefs.subject?h(displaySubject(l,prefs.abbreviate)):''}${prefs.view==='teachers'&&prefs.className?' '+h(lookup('classes',l.classId)?.name):''}</strong>${prefs.room?`<span class="print-room">${h(PrintTools.roomNumber(l.roomId?roomName(l.roomId):''))}</span>`:''}</div>${prefs.teacher&&prefs.view!=='teachers'?`<div class="print-secondary">${h(short(teacherName(l.teacherId)))}</div>`:''}${prefs.group&&group?`<div class="print-secondary">${h(group)}</div>`:''}</div>`;
  }
  function draw(){
   loadDay();

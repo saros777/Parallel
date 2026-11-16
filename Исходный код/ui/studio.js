@@ -63,9 +63,10 @@ function studioVisualParts(rows,entityId,problemIds=new Set()){
 }
 function studioVisualCell(rows,entityId,problemIds=new Set()){
  const parts=studioVisualParts(rows,entityId,problemIds);
- return {parts:Math.max(1,parts.length),html:parts.map(part=>part.lesson?card(part.lesson):'<span class="studio-lane-empty" aria-hidden="true"></span>').join('')};
+ const tracks=Math.max(1,...parts.map(part=>part.lanes||1));
+ return {parts:tracks,html:parts.map(part=>{const position=`grid-row:${(part.start??0)+1}/span ${part.span||1}`;return part.lesson?card(part.lesson).replace('style="',`style="${position};`):`<span class="studio-lane-empty" style="${position}" aria-hidden="true"></span>`}).join('')};
 }
-function studioRowFactor(entity,type){return type==='classes'&&entity.name==='11'?1.45:1}
+function studioRowFactor(entity,type){return type==='classes'&&entity.name==='10а'?1.7:type==='classes'&&entity.name==='11'?2.25:1}
 selected=function(){return db.classes.filter(c=>!selectedClasses||selectedClasses.has(c.id))};
 function studioContext(){
  if(studioPeriod==='base')return {...db,basePreview:true,baseSchedule:null,lessons:SM.template(db),overrides:{},extraLessons:[],absences:[],calendar:[]};

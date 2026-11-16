@@ -16,6 +16,8 @@ const social={id:'s',profileAudience:['social']},chemical={id:'c',profileAudienc
 assert.deepEqual(P.slotParts([chemical,social],'10а').map(x=>x.lesson?.id),['s','c']);
 assert.deepEqual(P.slotParts([chemical],'11').map(x=>x.lesson?.id||null),[null,'c',null]);
 assert.deepEqual(P.slotParts([physical,social,chemical],'11').map(x=>x.lesson.id),['s','c','p']);
+const shared={id:'sc',profileAudience:['social','chemical']};
+assert.deepEqual(P.slotParts([physical,shared],'11').map(x=>[x.lesson?.id,x.start,x.span]),[['sc',0,2],['p',2,1]]);
 assert.deepEqual(P.slotParts([{id:'f',groupName:'Девочки'},{id:'m',groupName:'Мальчики'}],'7а').map(x=>x.lesson.id),['m','f']);
 assert.deepEqual(P.slotParts([general],'11').map(x=>x.lesson.id),['g']);
 assert.equal(P.slotParts([{id:'x',suspended:true}],'5а').length,0);

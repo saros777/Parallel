@@ -20,6 +20,7 @@
      const out=[lessonPara(parts.join('  '),roomText,widths[i+1],{spacing:{before:j?25:0,after:0,line:240,lineRule:D.LineRuleType.AUTO},border:j?{top:{...border,color:'C7CDD4'}}:undefined})];
      if(prefs.teacher&&prefs.view!=='teachers')out.push(para(teacher(l)));
      if(prefs.group&&l.groupName&&!l.profileAudience?.length)out.push(para(groupLabel(l.groupName)));
+     for(let continuation=1;continuation<(entry.span||1);continuation++)out.push(para(' '));
      return out;
     });
     return cell(paragraphs.length?paragraphs:[para('·')],i+1);
@@ -29,7 +30,7 @@
     new D.Table({width:{size:width,type:D.WidthType.DXA},columnWidths:widths,layout:D.TableLayoutType.FIXED,borders:{top:border,bottom:border,left:border,right:border,insideHorizontal:border,insideVertical:border},margins:{top:20,bottom:20,left:35,right:35},rows:[head,...data]})
    ]};
   });
-  return new D.Document({creator:'Параллель '+(window.DESKTOP?.version||'5.4.7'),title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
+  return new D.Document({creator:'Параллель '+(window.DESKTOP?.version||'5.4.8'),title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
  }
  root.WordExport={build};
  if(typeof module!=='undefined')module.exports=root.WordExport;

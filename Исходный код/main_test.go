@@ -90,7 +90,7 @@ func TestScheduleBaselineMigrationIsBackedUp(t *testing.T) {
 	if s.data.Revision != 8 || s.data.Project != nil || !bytes.Equal(bytes.TrimSpace(s.data.State), bytes.TrimSpace(seed)) {
 		t.Fatal("new verified schedule was not installed cleanly")
 	}
-	backups, _ := filepath.Glob(filepath.Join(dir, "backups", "before-schedule-5.4.7-*.json"))
+	backups, _ := filepath.Glob(filepath.Join(dir, "backups", "before-schedule-5.4.8-*.json"))
 	if len(backups) != 1 {
 		t.Fatalf("migration backups: %d", len(backups))
 	}

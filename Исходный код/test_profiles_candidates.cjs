@@ -13,8 +13,13 @@ assert.deepEqual(b.map(x=>x.profile),['social','chemical','physical']);
 assert.equal(b[0].lesson.id,b[1].lesson.id); // visual repetition only, one shared lesson
 assert.equal(new Set(b.map(x=>x.lesson.id)).size,2);
 assert.deepEqual(E.profileLines([],real,c11),[]);
-const old=get(c10,2).find(l=>l.profileAudience?.includes('chemical')),changed={...old,profileAudience:['social']};
+const old=get(c10,2).find(l=>l.profileAudience?.includes('chemical')),changed={...old,profileAudience:['social'],profileManual:true};
 assert.deepEqual(E.profileAudience(changed,real),['social']);
+assert.deepEqual(E.profileAudience({...old,profileAudience:null,groupName:'Соцгум'},real),['social']);
+assert.deepEqual(E.profileAudience({...old,classId:c11,profileAudience:null,groupName:'Химбио + Физмат'},real),['chemical','physical']);
+assert.deepEqual(E.profileAudience({...old,classId:c11,profileAudience:null,groupName:'СГ + ХБ + ФМ'},real),['social','chemical','physical']);
+assert.deepEqual(E.profileAudience({...old,profileAudience:['social'],groupName:'Химбио'},real),['chemical']);
+assert.deepEqual(E.profileAudience({...old,profileAudience:['social'],profileManual:true,groupName:'Химбио'},real),['social']);
 assert.equal(E.roomOnlyChange(old,{...changed,roomId:'other'}),false);
 const l={id:'a',classId:'c',subjectId:'alg',teacherId:'absent',date:'2026-09-21',slot:1,time:'08:00 - 08:45'};
 const db={classes:[{id:'c',name:'5а'}],subjects:[{id:'alg',name:'Алгебра'},{id:'geom',name:'Геометрия'},{id:'bio',name:'Биология'},{id:'hist',name:'История России. Всеобщая история'},{id:'soc',name:'Обществознание'},{id:'prob',name:'Вероятность и статистика'},{id:'stat',name:'Медицинская статистика'}],

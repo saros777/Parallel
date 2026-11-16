@@ -40,11 +40,17 @@ function classProfiles(l,db){
 }
 function audience(l,db){
  const c=db.classes.find(c=>id(c.id)===id(l.classId)),n=(l.groupName||'').toLowerCase();
- if(Array.isArray(l.profileAudience)&&l.profileAudience.length)return l.profileAudience.filter(x=>classProfiles(l,db).includes(x));
- if(!n)return null;
- if(n.includes('социально')||n.includes('химико')||n.includes('физико')){
-  return [['социально','social'],['химико','chemical'],['физико','physical']].filter(([word])=>n.includes(word)).map(x=>x[1]);
- }
+ const explicit=Array.isArray(l.profileAudience)?l.profileAudience.filter(x=>classProfiles(l,db).includes(x)):[];
+ if(l.profileManual&&explicit.length)return explicit;
+ if(!n)return explicit.length?explicit:null;
+ const compact=n.replace(/ё/g,'е').replace(/[\s._-]+/g,''),tokens=n.split(/[+,;/|]/).map(x=>x.trim().replace(/[\s._-]+/g,''));
+ const named=[
+  [/социальногуманитар|соцгум/,/^сг$/,'social'],
+  [/химикобиолог|химбио/,/^хб$/,'chemical'],
+  [/физикоматемат|физмат/,/^фм$/,'physical']
+ ].filter(([long,short])=>long.test(compact)||tokens.some(x=>short.test(x))).map(x=>x[2]);
+ if(named.length)return named.filter(x=>classProfiles(l,db).includes(x));
+ if(explicit.length)return explicit;
  if((c?.name==='11'||c?.name==='10а')&&/базов|углуб/.test(n)){
   const s=db.subjects.find(s=>id(s.id)===id(l.subjectId))?.name.toLowerCase()||'';
   const advanced=n.includes('углуб');
