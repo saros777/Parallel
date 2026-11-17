@@ -7,6 +7,7 @@ let work=E.patchedDB(d,parked);assert(!E.conflicts(work).some(x=>x.lessonIds.inc
 assert(!E.absenceFor({...d.lessons[0],parked:true},{...d,absences:[{teacherId:'a',startDate:'2026-09-01',endDate:'2026-10-01'}]}));
 let swap=W.plan(d,'one','2026-09-23',2,{targetId:'two'});assert.equal(swap.length,2);assert.equal(swap[1].after.slot,1);
 assert(W.assess(d,swap).issues.some(x=>x.kind.includes('Учитель')));
+let cross=fixture();cross.lessons.find(l=>l.id==='two').slot=3;let teacherSwap=W.plan(cross,'one','2026-09-23',2,{targetId:'busy'});assert.equal(teacherSwap.length,2);assert.equal(teacherSwap[0].after.slot,2);assert.equal(teacherSwap[1].after.slot,1);assert(!W.assess(cross,teacherSwap).issues.some(x=>x.kind.includes('Учитель')));
 assert.equal(JSON.stringify(d),before,'planning never mutates data');
 let replace=W.plan(d,'one','2026-09-23',2,{targetId:'two',action:'stash'});assert(replace[1].after.parked);
 let together=W.plan(d,'one','2026-09-23',2,{targetId:'two',action:'together'});assert.equal(together.length,1);

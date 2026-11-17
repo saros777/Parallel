@@ -10,7 +10,9 @@
   if(!date||!Number.isInteger(slot)||slot<1||slot>20)throw Error('Некорректная дата или номер урока');
   const from=block&&!old.parked?rows.filter(l=>active(l)&&l.classId===old.classId&&l.date===old.date&&l.slot===old.slot):[old];
   const targets=rows.filter(l=>active(l)&&l.classId===old.classId&&l.date===date&&l.slot===slot&&!from.some(f=>f.id===l.id));
-  const target=targetId?targets.find(l=>l.id===targetId):null;
+  // An explicit target comes from the currently visible axis.  In teacher or
+  // room view it can belong to another class and still must be exchanged.
+  const target=targetId?rows.find(l=>active(l)&&l.id===targetId&&l.date===date&&l.slot===slot&&!from.some(f=>f.id===l.id)):null;
   const to=block?targets:target?[target]:[];
   if([...from,...to].some(l=>l.locked))throw Error('Затронут закреплённый урок. Сначала снимите закрепление.');
   const moved=l=>({...l,date,slot,parked:false,...E.slotInfo(timingDB,l.classId,date,slot)});

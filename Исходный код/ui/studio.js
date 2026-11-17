@@ -99,10 +99,10 @@ function studioPopup(title,body,actions){
  panel.querySelector('[data-pop-action]')?.focus({preventScroll:true});
 }
 function studioConfirm(label,raw,carryId=null){
- const r=studioCheck(raw);const notes=[...new Set(r.issues.map(x=>x.kind))];
+ const r=studioCheck(raw),issues=carryId?r.issues.filter(x=>!(x.lessonIds||[]).includes(carryId)):r.issues,notes=[...new Set(issues.map(x=>x.kind))];
  if(!notes.length){studioApply(label,r.patches,false,carryId);return}
  const moving=new Set(raw.map(p=>p.id));
- const otherIds=new Set(r.issues.flatMap(i=>i.lessonIds||[]).filter(id=>!moving.has(id)));
+ const otherIds=new Set(issues.flatMap(i=>i.lessonIds||[]).filter(id=>!moving.has(id)));
  const occupied=[...otherIds].map(id=>studioRows.find(l=>l.id===id)).filter(Boolean);
  studioPopup('Конфликт',`<ul>${notes.map(n=>`<li>${h(n)}</li>`).join('')}</ul>${occupied.length?`<small>${occupied.slice(0,3).map(l=>h(lookup('classes',l.classId)?.name+' · '+studioSubject(l)+' · '+days[SM.day(l.date)]+' '+l.slot)).join('<br>')}</small>`:''}`,[{text:'Не размещать',action:studioClosePopup},{text:'Игнорировать конфликт и разместить',class:'primary',action:()=>studioApply(label,r.patches,true,carryId)}]);
 }
@@ -114,12 +114,16 @@ function studioPlacement(td,targetId=null){
  if(members.some(l=>l.locked))throw Error('Сначала снимите закрепление всех уроков спарки');
  const targetDate=td.dataset.date,targetSlot=+td.dataset.slot,probes=members.map(l=>({...l,date:targetDate,slot:targetSlot+(l.blockOffset||0)-(old.blockOffset||0),parked:false,suspended:false}));
  if(probes.some(l=>l.slot<1||l.slot>studioSlots))throw Error('Блок уроков не помещается в этот день');
- const occupants=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).filter(l=>l&&!memberIds.has(l.id)&&!l.cancelled&&!l.parked&&!l.suspended&&l.classId===old.classId);
- const exact=targetId?occupants.find(l=>l.id===targetId):null,overlapping=occupants.filter(l=>!E.disjoint(old,l,db));
- if(overlapping.length>1)throw Error('В ячейке несколько подгрупп. Перемещайте их отдельно');
+ const occupants=[...td.querySelectorAll('[data-lesson]')].map(e=>studioRows.find(l=>l.id===e.dataset.lesson)).filter(l=>l&&!memberIds.has(l.id)&&!l.cancelled&&!l.parked&&!l.suspended);
+ // In class view complementary subgroups may share a cell and only an
+ // overlapping audience is displaced.  Teacher/room rows represent a
+ // resource, so their visible card is the exchange target even when it
+ // belongs to another class.
+ const resourceAxis=studioAxis==='teachers'||studioAxis==='rooms',exact=targetId?occupants.find(l=>l.id===targetId):null,overlapping=occupants.filter(l=>resourceAxis||!E.disjoint(old,l,db));
+ if(overlapping.length>1)throw Error(resourceAxis?'В ячейке несколько карточек. Выберите конкретную':'В ячейке несколько подгрупп. Перемещайте их отдельно');
  // Complementary subgroups share a slot. Clicking such a card must not
  // displace it; only an overlapping lesson is exchanged.
- const target=exact&&!E.disjoint(old,exact,db)?exact:(overlapping[0]||null);
+ const target=exact&&(resourceAxis||!E.disjoint(old,exact,db))?exact:(overlapping[0]||null);
  // Teacher occupancy is deliberately not a hard placement restriction.
  // The final-state assessment reports it as a red warning and lets the user
  // place the card after confirmation.  This also keeps ordinary swaps usable.
@@ -171,7 +175,9 @@ function studioTake(id){
 }
 function studioQuickAvailability(td){
  const placement=studioPlacement(td),changed=new Set([...placement.members.map(l=>l.id),...(placement.target?[placement.target.id]:[])]),candidates=placement.probes.map(l=>({...l,parked:false,suspended:false}));
- if(placement.target&&!placement.old.parked)candidates.push({...placement.target,date:placement.old.date,slot:placement.old.slot,parked:false,...studioTime(placement.target.classId,placement.old.date,placement.old.slot)});
+ // The displaced card is immediately attached to the pointer and is not a
+ // final placement yet.  Its temporary source cell must not make the chosen
+ // destination red; it will be assessed when the user places that card.
  const notes=[];
  for(const candidate of candidates){
   notes.push(...SM.restrictions(candidate,db));
