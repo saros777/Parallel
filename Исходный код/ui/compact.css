@@ -46,7 +46,7 @@ dialog.print-dialog{width:min(1160px,96vw);max-width:96vw}
 .print-slot-line+.print-slot-line{border-top:0.5pt solid #bbb}
 .print-slot-empty{color:transparent}
 .print-primary-line{display:block;min-width:0}
-.print-primary-line strong{display:block;font-weight:600;min-width:0;padding-right:5.4mm;overflow-wrap:anywhere}
+.print-primary-line strong{display:block;font-weight:600;min-width:0;padding-right:5.4mm;white-space:nowrap;overflow-wrap:normal}
 .print-room{position:absolute;right:.25mm;top:.25mm;box-sizing:border-box;min-width:3.6mm;padding:0 .35mm;border:.5pt solid #59636f;border-radius:.8mm;background:#fff;color:#111;text-align:center;font-weight:600;line-height:1.15;white-space:nowrap;font-variant-numeric:tabular-nums}
 .print-secondary{font-weight:400;font-size:inherit;line-height:1.1;margin-top:0.4mm}
 .print-cancelled .print-primary-line{text-decoration:line-through}

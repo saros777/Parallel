@@ -2,12 +2,16 @@
 showPrint=function(initialView){
  let prefs=PrintTools.preferences(settings.printLayout?.schema===2?settings.printLayout:PrintTools.defaults),drawTimer,allFit=false;
  if(initialView==='teachers'||initialView==='classes')prefs.view=initialView;
- const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date()),screenClasses=selected();let printDate=today,dayRows=[];
- const loadDay=()=>dayRows=E.sortProfileRows(E.effectiveBetween(db,printDate,printDate).filter(l=>!l.cancelled&&!l.parked&&!l.suspended).map(l=>({...l,profileAudience:E.profileAudience(l,db)})),db);loadDay();
+ const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date()),screenClasses=selected();let printDate=today,dayRows=[],resetPreviewScroll=false;
+ // For a day currently shown in the weekly editor, print the exact resolved
+ // rows on screen. This preserves every unsaved move/removal and, critically,
+ // the room numbers already assigned to those cards. Other dates are expanded
+ // from the same in-memory project without requiring a save.
+ const loadDay=()=>{const visibleWeek=route==='schedule'&&studioPeriod==='weeks'&&studioDates.includes(printDate),source=visibleWeek?studioRows.filter(l=>l.date===printDate):E.effectiveBetween(db,printDate,printDate);dayRows=E.sortProfileRows(source.filter(l=>!l.cancelled&&!l.parked&&!l.suspended).map(l=>({...l,profileAudience:E.profileAudience(l,db)})),db)};loadDay();
  let classes=[],rows=[],pageGroups=[];
  const printParts=(lessons,className)=>PrintTools.slotParts(lessons.map(l=>({...l,profileAudience:E.profileAudience(l,db)})),className);
  const checked=k=>prefs[k]?'checked':'';
- dialog('Печать A4 · версия 5.4.13',`<div class="print-presets">
+ dialog('Печать A4 · версия 5.4.14',`<div class="print-presets">
  <button data-print-preset="portrait"><strong>1. Книжный · 1 лист</strong><span>Все классы · предмет + номер</span></button>
  <button data-print-preset="sections"><strong>2. Книжный · крупнее</strong><span>По ступеням · до 3 листов</span></button>
  <button data-print-preset="landscape"><strong>3. Альбомный · 1 лист</strong><span>Дополнительный компактный вариант</span></button>
@@ -38,7 +42,7 @@ showPrint=function(initialView){
    await document.fonts.ready;
    $('#print-fit-status').textContent='Готовлю PDF с фиксированным размером A4…';
    const doc=new jspdf.jsPDF({orientation:prefs.orientation,unit:'mm',format:'a4',compress:true});
-   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.13'});
+   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.14'});
    const width=(prefs.orientation==='portrait'?210:297)-prefs.margin*2;
    const sheets=$$('#paper-preview .print-compact-sheet');
    for(let i=0;i<sheets.length;i++){
@@ -70,7 +74,7 @@ showPrint=function(initialView){
  $('#dialog').addEventListener('close',()=>{clearTimeout(drawTimer);$('#dialog').classList.remove('print-dialog')},{once:true});
  function store(){settings.printLayout={...prefs};dirty=true;render()}
  function readControls(){
-  if($('#print-date')?.value&&$('#print-date').value!==printDate){printDate=$('#print-date').value;loadDay()}
+  if($('#print-date')?.value&&$('#print-date').value!==printDate){printDate=$('#print-date').value;resetPreviewScroll=true;loadDay()}
   prefs=PrintTools.preferences({...prefs,view:$('#print-view').value,scope:$('#print-scope').value,orientation:$('#paper-orientation').value,margin:+$('#paper-margin').value,font:+$('#paper-font').value,fit:$('#paper-fit').checked,...Object.fromEntries($$('[data-print-field]').map(x=>[x.dataset.printField,x.checked]))});
   $$('[data-print-field]').forEach(x=>x.checked=prefs[x.dataset.printField]);
  }
@@ -107,10 +111,11 @@ showPrint=function(initialView){
   preview.innerHTML=pageGroups.map(g=>{const fill=prefs.layout==='sheet'&&g.classes.length>=18;return `<section class="print-compact-sheet ${fill?'print-fill-page':''}" style="--print-font:${prefs.font}pt;--print-pad:${prefs.orientation==='landscape'?0.3:0.7}mm;--slot-pad:${prefs.orientation==='landscape'?0.15:0.45}mm;--table-width:${tableWidth}mm;--sheet-height:${height-2}mm;width:${width}mm"><header class="print-title"><h1>Расписание ${PrintTools.dateLabel(printDate)}</h1></header><table class="compact-print-table"><colgroup><col style="width:${labelWidth}mm">${Array.from({length:max},()=>'<col>').join('')}</colgroup><thead><tr><th>${prefs.view==='teachers'?'Учитель':'Кл.'}</th>${Array.from({length:max},(_,i)=>`<th>${i+1}</th>`).join('')}</tr></thead><tbody>${g.classes.map((c,j)=>`<tr class="${prefs.banding&&(prefs.view==='teachers'?j%2===1:parseInt(c.name)%2===0)?'print-grade-band':''}"><th scope="row">${h(c.name)}</th>${Array.from({length:max},(_,i)=>`<td>${cellHTML(c,i+1)}</td>`).join('')}</tr>`).join('')}</tbody></table></section>`}).join('');
   allFit=!!classes.length;const fonts=[];
   $$('#paper-preview .print-compact-sheet').forEach(sheet=>{
-   const limit=height*96/25.4-4,used=()=>Math.max(sheet.getBoundingClientRect().height,sheet.scrollHeight);let font=prefs.font;
-   if(prefs.fit)while(used()>limit&&font>9){font=Math.max(9,font-.25);sheet.style.setProperty('--print-font',font+'pt')}
-   if(used()>limit)allFit=false;fonts.push(font);
+   const limit=height*96/25.4-4,used=()=>Math.max(sheet.getBoundingClientRect().height,sheet.scrollHeight),wide=()=>[...sheet.querySelectorAll('.print-primary-line strong')].some(x=>x.scrollWidth>x.clientWidth+1);let font=prefs.font;
+   if(prefs.fit)while((used()>limit||wide())&&font>9){font=Math.max(9,font-.25);sheet.style.setProperty('--print-font',font+'pt')}
+   if(used()>limit||wide())allFit=false;fonts.push(font);
   });
+  if(resetPreviewScroll){$('.print-preview-scroll').scrollTop=0;$('.print-preview-scroll').scrollLeft=0;resetPreviewScroll=false}
   $('#print-fit-status').textContent=!classes.length?'Нет строк для выбранного дня и классов.':allFit?`${pageGroups.length} ${pageGroups.length===1?'лист':'листа'} A4 · ${prefs.orientation==='portrait'?'книжный':'альбомный'} · ${classes.length} ${label} · ${Math.min(...fonts)} пт`:'Не помещается без обрезки. Выберите макет 2, выключите лишние поля или уменьшите шрифт. Печать заблокирована до исправления.';
   $('#print-fit-status').classList.toggle('print-warning',!allFit);
   $('#dialog-action-1').disabled=!allFit;$('#dialog-action-2').disabled=!allFit;
