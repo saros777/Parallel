@@ -1,0 +1,110 @@
+{
+  "version": "5.4.13",
+  "sourceCommit": "5f1ac35be2167d1df3b7e94f9a03ccb7c681d31c",
+  "os": "Microsoft Windows NT 10.0.26100.0",
+  "installerFormat": "Windows Installer MSI",
+  "installerScripts": "none",
+  "applicationSignature": "NotSigned: no publisher code-signing certificate provided",
+  "sampleSubmission": "disabled; antivirus remains active",
+  "originalDetection": "5.1: Trojan:Win32/Wacatac.B!ml; cause unconfirmed; installer withdrawn",
+  "checks": {
+    "defenderInstallerAndExecutables": "passed; files retain Internet zone mark",
+    "msiInstallAndInstalledPayloadScan": "passed",
+    "applicationZipDefenderScan": "passed",
+    "secondInstanceDocumentRequest": "passed; second process exited, first window activated the queued document",
+    "firstInstalledLaunch": {
+      "stateIPCBytes": 154300,
+      "stateReadMs": 5,
+      "elapsedMs": 4484,
+      "observedReadyMs": 5154,
+      "stateJSONBytes": 1367009,
+      "frontend": {
+        "bootMs": 781,
+        "domReadyMs": 1278.7000000000116,
+        "fetchMs": 328.3999999999942,
+        "jsonMs": 5.100000000005821,
+        "normalizeMs": 1,
+        "renderMs": 163.10000000000582,
+        "renderSignal": "animation-frame",
+        "signalMs": 1649.3999999999942,
+        "visibility": "visible"
+      },
+      "statePackMs": 3
+    },
+    "regularLaunch": {
+      "stateIPCBytes": 154296,
+      "stateReadMs": 110,
+      "elapsedMs": 999,
+      "observedReadyMs": 1270,
+      "stateJSONBytes": 1367009,
+      "frontend": {
+        "bootMs": 140.89999999999418,
+        "domReadyMs": 349.70000000001164,
+        "fetchMs": 136.10000000000582,
+        "jsonMs": 5,
+        "normalizeMs": 0.6000000000058208,
+        "renderMs": 67.10000000000582,
+        "renderSignal": "animation-frame",
+        "signalMs": 609.1000000000058,
+        "visibility": "visible"
+      },
+      "statePackMs": 3
+    },
+    "withoutInstallationLaunch": {
+      "stateIPCBytes": 154296,
+      "stateReadMs": 92,
+      "elapsedMs": 807,
+      "observedReadyMs": 1037,
+      "stateJSONBytes": 1367009,
+      "frontend": {
+        "bootMs": 105.89999999999418,
+        "domReadyMs": 279.8999999999942,
+        "fetchMs": 114.70000000001164,
+        "jsonMs": 3.6000000000058208,
+        "normalizeMs": 0.5,
+        "renderMs": 55.09999999997672,
+        "renderSignal": "animation-frame",
+        "signalMs": 483,
+        "visibility": "visible"
+      },
+      "statePackMs": 2
+    },
+    "installedNativeWindowIpcClose": "passed; verified 862-card recurring workbook baseline; no HTTP listener",
+    "afterRepairViaFileAssociation": {
+      "stateIPCBytes": 154404,
+      "stateReadMs": 169,
+      "elapsedMs": 817,
+      "observedReadyMs": 1111,
+      "stateJSONBytes": 1367069,
+      "frontend": {
+        "bootMs": 100.69999999998254,
+        "domReadyMs": 350.3999999999942,
+        "fetchMs": 191.70000000001164,
+        "jsonMs": 3.6000000000058208,
+        "normalizeMs": 0.5999999999767169,
+        "renderMs": 53.80000000001746,
+        "renderSignal": "animation-frame",
+        "signalMs": 550.1999999999825,
+        "visibility": "visible"
+      },
+      "statePackMs": 2
+    },
+    "msiRepairAndExistingWorkspace": "passed",
+    "msiUninstallPreservesWorkspace": "passed",
+    "sourceArchiveDefenderScan": "passed"
+  },
+  "defender": {
+    "engine": "1.1.26100.4",
+    "platform": "4.18.26100.4",
+    "realTimeProtectionEnabled": false,
+    "signatures": "1.463.346.0",
+    "signaturesUpdated": "2026-11-17T12:41:14Z"
+  },
+  "startupBudgetsMs": {
+    "fileAssociation": 8000,
+    "regularLaunch": 5000,
+    "firstWebViewProfile": 20000
+  },
+  "verdict": "All specified checks passed in this environment. This does not clear the reported 5.1 detection or guarantee identical results on another device.",
+  "completedUtc": "2026-11-17T19:57:02.9363358Z"
+}
