@@ -125,7 +125,7 @@ function studioPlacement(td,targetId=null){
  // place the card after confirmation.  This also keeps ordinary swaps usable.
  if(target?.locked)throw Error('Целевой урок закреплён. Сначала снимите закрепление');
  if(target?.blockId||members.length>1&&target)throw Error('Спарку можно обменивать только целиком');
- return {old,members,target,action:target?'swap':'together'};
+ return {old,members,target,probes,action:target?'swap':'together'};
 }
 function studioPlan(td,action=null,targetId=null){
  const placement=studioPlacement(td,targetId),{old,target}=placement;action=action||placement.action;
@@ -163,24 +163,28 @@ function studioTake(id){
  $$('[data-lesson]').filter(e=>e.dataset.lesson===id).forEach(e=>e.classList.add('picked'));
  const key=studioAxis==='teachers'?'teacherId':studioAxis==='rooms'?'roomId':'classId';
  $$('[data-row-head]').forEach(e=>{e.classList.remove('target-ok','target-bad','target-block');if(e.dataset.rowHead===l[key])e.classList.add('target-ok')});
- const pickup=studioPick,heads=$$('[data-col-head]');let nextHead=0;
- heads.forEach(head=>head.classList.add('target-pending'));
- // Yield between columns so picking up a card never waits for the whole week.
- const paintNext=()=>{
-  if(studioPick!==pickup||nextHead>=heads.length)return;
-  const started=performance.now();
-  do{const head=heads[nextHead++],[d,n]=head.dataset.colHead.split('|');
-   const td=$(`[data-entity="${l[key]}"][data-date="${d}"][data-slot="${n}"]`);
-   if(td){const result=studioAvailability(td);head.classList.remove('target-pending');if(!result.blocked)head.classList.add(result.notes.length?'target-bad':'target-ok')}
-  }while(nextHead<heads.length&&performance.now()-started<4);
-  if(nextHead<heads.length)requestAnimationFrame(paintNext);
- };
- requestAnimationFrame(paintNext);
+ // Availability uses the already rendered rows and is cheap enough to paint
+ // the complete week synchronously.  Full room allocation remains part of
+ // the final placement check, not the hover/highlight path.
+ for(const head of $$('[data-col-head]')){const [d,n]=head.dataset.colHead.split('|'),td=$(`[data-entity="${l[key]}"][data-date="${d}"][data-slot="${n}"]`);if(td){const result=studioAvailability(td);if(!result.blocked)head.classList.add(result.notes.length?'target-bad':'target-ok')}}
  $('#studio-hint').textContent=studioBrief(l)+' · выберите место; правая/нижняя область — временно убрать';
+}
+function studioQuickAvailability(td){
+ const placement=studioPlacement(td),changed=new Set([...placement.members.map(l=>l.id),...(placement.target?[placement.target.id]:[])]),candidates=placement.probes.map(l=>({...l,parked:false,suspended:false}));
+ if(placement.target&&!placement.old.parked)candidates.push({...placement.target,date:placement.old.date,slot:placement.old.slot,parked:false,...studioTime(placement.target.classId,placement.old.date,placement.old.slot)});
+ const notes=[];
+ for(const candidate of candidates){
+  notes.push(...SM.restrictions(candidate,db));
+  if(E.absenceFor(candidate,studioWork))notes.push('Учитель отмечен отсутствующим');
+  if((studioWork.calendar||[]).some(c=>c.classId===candidate.classId&&c.date===candidate.date&&c.isHoliday))notes.push('Неучебный день');
+  for(const other of studioRows)if(!changed.has(other.id)&&!other.cancelled&&!other.parked&&!other.suspended)notes.push(...E.pairIssues(candidate,other,studioWork).filter(kind=>kind!=='Кабинет занят одновременно'));
+ }
+ for(let i=0;i<candidates.length;i++)for(let j=i+1;j<candidates.length;j++)notes.push(...E.pairIssues(candidates[i],candidates[j],studioWork).filter(kind=>kind!=='Кабинет занят одновременно'));
+ return {notes:[...new Set(notes)]};
 }
 function studioAvailability(td){
  const key=td.dataset.entity+'|'+td.dataset.date+'|'+td.dataset.slot;
- if(!studioPick.cache.has(key)){try{const placement=studioPlacement(td),r=studioCheck(studioPlan(td,placement.action));studioPick.cache.set(key,{notes:[...new Set(r.issues.map(x=>x.kind))]})}catch(e){studioPick.cache.set(key,{blocked:true,notes:[e.message]})}}
+ if(!studioPick.cache.has(key)){try{studioPick.cache.set(key,studioQuickAvailability(td))}catch(e){studioPick.cache.set(key,{blocked:true,notes:[e.message]})}}
  return studioPick.cache.get(key);
 }
 function studioHover(td){
@@ -304,8 +308,8 @@ function studioRoomChoices(old){
  return rooms.map(room=>({room,free:!occupied.has(room.id)}));
 }
 function studioRoomMenu(anchor,id){
- document.querySelector('#studio-room-menu')?.remove();const old=studioRows.find(l=>l.id===id);if(!old)return;const menu=document.createElement('div');menu.id='studio-room-menu';menu.innerHTML=`<strong>${h(studioSubject(old))} · ${h(lookup('classes',old.classId)?.name)}</strong><button type="button" data-room-value="__auto" class="${old.roomMode!=='manual'?'active':''}">Автоподбор</button><button type="button" data-room-value="__none" class="${old.roomMode==='manual'&&!old.roomId?'active':''}">Нет</button>${studioRoomChoices(old).map(({room,free})=>`<button type="button" data-room-value="${h(room.id)}" class="${old.roomId===room.id?'active ':''}${free?'room-free':'room-busy'}" title="${free?'Свободен':'Занят в это время'}">${h(PrintTools.roomNumber(room.name)||room.name)}</button>`).join('')}`;document.body.append(menu);
- const rect=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.left=Math.max(6,Math.min(rect.left,innerWidth-box.width-6))+'px';menu.style.top=Math.max(6,Math.min(rect.bottom+3,innerHeight-box.height-6))+'px';menu.querySelectorAll('[data-room-value]').forEach(b=>b.onclick=()=>{const value=b.dataset.roomValue,automatic=value==='__auto',roomId=automatic||value==='__none'?null:value;menu.remove();studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:automatic?'auto':'manual'}}])});menu.querySelector('button')?.focus();
+ document.querySelector('#studio-room-menu')?.remove();const old=studioRows.find(l=>l.id===id);if(!old)return;const menu=document.createElement('div');menu.id='studio-room-menu';menu.innerHTML=`<strong>${h(studioSubject(old))} · ${h(lookup('classes',old.classId)?.name)}</strong><div class="studio-room-options"><button type="button" data-room-value="__auto" class="${old.roomMode!=='manual'?'active':''}">Автоподбор</button><button type="button" data-room-value="__none" class="${old.roomMode==='manual'&&!old.roomId?'active':''}">Нет</button>${studioRoomChoices(old).map(({room,free})=>`<button type="button" data-room-value="${h(room.id)}" class="${old.roomId===room.id?'active ':''}${free?'room-free':'room-busy'}" title="${free?'Свободен':'Занят в это время'}">${h(PrintTools.roomNumber(room.name)||room.name)}</button>`).join('')}</div><button type="button" data-room-cancel>Отменить</button>`;document.body.append(menu);
+ const rect=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.left=Math.max(6,Math.min(rect.left,innerWidth-box.width-6))+'px';menu.style.top=Math.max(6,Math.min(rect.bottom+3,innerHeight-box.height-6))+'px';menu.querySelectorAll('[data-room-value]').forEach(b=>b.onclick=()=>{const value=b.dataset.roomValue,automatic=value==='__auto',roomId=automatic||value==='__none'?null:value;menu.remove();studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:automatic?'auto':'manual'}}])});menu.querySelector('[data-room-cancel]').onclick=()=>menu.remove();menu.querySelector('[data-room-value]')?.focus();
 }
 function studioFit(){
  const workspace=$('#studio-workspace');if(!workspace)return;
