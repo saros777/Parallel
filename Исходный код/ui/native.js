@@ -12,7 +12,8 @@ if(window.DESKTOP?.native){
    const blob=data instanceof Blob?data:new Blob([data],{type});
    const bytes=new Uint8Array(await blob.arrayBuffer());let binary='';
    for(let i=0;i<bytes.length;i+=32768)binary+=String.fromCharCode(...bytes.subarray(i,i+32768));
-   const saved=await native.SaveFile(name,btoa(binary));
+   const preferred=window.localStorage?.getItem('parallel.exportDirectory')||'';
+   const saved=await native.SaveFile(name,btoa(binary),preferred);
    message(saved?'Файл сохранён.':'Сохранение файла отменено.');return saved;
   }catch(e){message('Не удалось сохранить файл: '+e);return false}
  };

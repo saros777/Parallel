@@ -84,10 +84,23 @@ func runDesktop(dir string, initialPaths ...string) error {
 		}
 		return wruntime.SaveFileDialog(ctx, wruntime.SaveDialogOptions{Title: "Сохранить файл", DefaultFilename: name, Filters: []wruntime.FileFilter{{DisplayName: label, Pattern: pattern}}})
 	}
-	bridge.saveFile = func(name string, raw []byte) (bool, error) {
+	existingDirectory := func(path string) string {
+		path = filepath.Clean(strings.TrimSpace(path))
+		if path == "." || !filepath.IsAbs(path) {
+			return ""
+		}
+		if info, err := os.Stat(path); err != nil || !info.IsDir() {
+			return ""
+		}
+		return path
+	}
+	bridge.chooseFolder = func(current string) (string, error) {
+		return wruntime.OpenDirectoryDialog(ctx, wruntime.OpenDialogOptions{Title: "Папка экспорта PDF, Word и таблиц", DefaultDirectory: existingDirectory(current)})
+	}
+	bridge.saveFile = func(name string, raw []byte, defaultDirectory string) (bool, error) {
 		ext := strings.ToLower(filepath.Ext(name))
 		pattern := "*" + ext
-		dest, err := wruntime.SaveFileDialog(ctx, wruntime.SaveDialogOptions{Title: "Сохранить файл", DefaultFilename: name, Filters: []wruntime.FileFilter{{DisplayName: strings.ToUpper(strings.TrimPrefix(ext, ".")) + " файл", Pattern: pattern}}})
+		dest, err := wruntime.SaveFileDialog(ctx, wruntime.SaveDialogOptions{Title: "Сохранить файл", DefaultDirectory: existingDirectory(defaultDirectory), DefaultFilename: name, Filters: []wruntime.FileFilter{{DisplayName: strings.ToUpper(strings.TrimPrefix(ext, ".")) + " файл", Pattern: pattern}}})
 		if err != nil || dest == "" {
 			return false, err
 		}

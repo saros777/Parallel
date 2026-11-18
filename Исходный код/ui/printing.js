@@ -2,6 +2,9 @@
 showPrint=function(initialView){
  let prefs=PrintTools.preferences(settings.printLayout?.schema===2?settings.printLayout:PrintTools.defaults),drawTimer,allFit=false;
  if(initialView==='teachers'||initialView==='classes')prefs.view=initialView;
+ const native=window.DESKTOP?.native?window.go?.main?.DesktopBridge:null;
+ let exportDirectory=native?(window.localStorage?.getItem('parallel.exportDirectory')||''):'';
+ const exportFolderControls=native?`<fieldset class="print-fields print-export-folder"><legend>Сохранение файлов</legend><label class="field">Папка по умолчанию<input id="print-export-directory" type="text" readonly value="${h(exportDirectory)}" placeholder="Не выбрана — Windows предложит последнюю папку"></label><div><button type="button" id="print-export-choose">Выбрать папку…</button><button type="button" id="print-export-reset" ${exportDirectory?'':'disabled'}>Сбросить</button></div><small>PDF, Word и экспортируемые таблицы открывают «Сохранить как» в этой папке.</small></fieldset>`:'';
  const today=new Intl.DateTimeFormat('en-CA',{timeZone:'Europe/Moscow'}).format(new Date()),screenClasses=selected();let printDate=today,dayRows=[],resetPreviewScroll=false;
  // For a day currently shown in the weekly editor, print the exact resolved
  // rows on screen. This preserves every unsaved move/removal and, critically,
@@ -11,7 +14,7 @@ showPrint=function(initialView){
  let classes=[],rows=[],pageGroups=[];
  const printParts=(lessons,className)=>PrintTools.slotParts(lessons.map(l=>({...l,profileAudience:E.profileAudience(l,db)})),className);
  const checked=k=>prefs[k]?'checked':'';
- dialog('Печать A4 · версия 5.4.14',`<div class="print-presets">
+ dialog('Печать A4 · версия 5.4.15',`<div class="print-presets">
  <button data-print-preset="portrait"><strong>1. Книжный · 1 лист</strong><span>Все классы · предмет + номер</span></button>
  <button data-print-preset="sections"><strong>2. Книжный · крупнее</strong><span>По ступеням · до 3 листов</span></button>
  <button data-print-preset="landscape"><strong>3. Альбомный · 1 лист</strong><span>Дополнительный компактный вариант</span></button>
@@ -20,11 +23,11 @@ showPrint=function(initialView){
  <label class="field">Строки расписания<select id="print-view"><option value="classes">Классы</option><option value="teachers">Учителя</option></select></label>
  <label class="field">Какие классы<select id="print-scope"><option value="all">Все классы школы</option><option value="selected">Только выбранные на экране</option></select></label>
  <label class="field">Лист A4<select id="paper-orientation"><option value="portrait">Книжная (вертикально)</option><option value="landscape">Альбомная</option></select></label>
- <div class="form-grid"><label class="field">Поля, мм<input id="paper-margin" type="number" min="3" max="20" step="1" value="${prefs.margin}"></label><label class="field">Шрифт, пт<input id="paper-font" type="number" min="9" max="14" step="0.5" value="${prefs.font}"></label></div>
+ <div class="form-grid"><label class="field">Поля, мм<input id="paper-margin" type="number" min="3" max="20" step="1" value="${prefs.margin}"></label><label class="field">Шрифт, пт<input id="paper-font" type="number" min="9" max="14" step="0.5" value="${prefs.font}"></label></div>${exportFolderControls}
  <label class="checkbox-line"><input id="paper-fit" type="checkbox" ${checked('fit')}>Уместить в выбранный макет</label>
  <fieldset class="print-fields"><legend>Содержимое ячейки</legend>${[['subject','Предмет'],['className','Класс (в печати по учителям)'],['room','Номер кабинета без названия'],['teacher','Учитель (в печати по классам)'],['group','Подгруппа / профиль'],['abbreviate','Сокращения предметов'],['banding','Лёгкая заливка параллелей / строк']].map(([k,v])=>`<label class="checkbox-line"><input type="checkbox" data-print-field="${k}" ${checked(k)}>${v}</label>`).join('')}</fieldset>
  <button id="paper-reset">Сброс: книжный, все классы</button>
- <p id="print-fit-status" role="status"></p><p class="hint">«Скачать PDF A4» сохраняет выбранную ориентацию и число листов без настроек браузера. Для обычной печати: A4, масштаб 100%, колонтитулы выключены. Номер не назначен: «—».</p>
+ <p id="print-fit-status" role="status"></p><p class="hint">«Сохранить PDF A4» и «Сохранить Word» открывают системное окно Windows для выбора папки и имени файла. Для обычной печати: A4, масштаб 100%, колонтитулы выключены. Номер не назначен: «—».</p>
  </div><div class="print-preview-wrap"><div class="print-preview-label">Так будет выглядеть печать · номер справа, без названия кабинета</div><div class="print-preview-scroll"><div id="paper-preview"></div></div></div></div>`,[
  {text:'Сохранить настройки',action:()=>{readControls();store();$('#dialog').close()}},
  {text:'Печать',action:()=>{
@@ -34,7 +37,7 @@ showPrint=function(initialView){
   style.textContent=`@page parallel-schedule{size:A4 ${prefs.orientation};margin:${prefs.margin}mm} @media print{.print-compact-sheet{page:parallel-schedule}}`;
   $('#dialog').close();window.print();
  }},
- {text:'Скачать PDF A4',class:'primary',action:async()=>{
+ {text:'Сохранить PDF A4',class:'primary',action:async()=>{
   readControls();draw();if(!classes.length||!allFit)return;
   const buttons=$$('.print-dialog button,.print-dialog input,.print-dialog select');buttons.forEach(x=>x.disabled=true);
   let capture;
@@ -42,7 +45,7 @@ showPrint=function(initialView){
    await document.fonts.ready;
    $('#print-fit-status').textContent='Готовлю PDF с фиксированным размером A4…';
    const doc=new jspdf.jsPDF({orientation:prefs.orientation,unit:'mm',format:'a4',compress:true});
-   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.14'});
+   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.15'});
    const width=(prefs.orientation==='portrait'?210:297)-prefs.margin*2;
    const sheets=$$('#paper-preview .print-compact-sheet');
    for(let i=0;i<sheets.length;i++){
@@ -52,26 +55,31 @@ showPrint=function(initialView){
     doc.addImage(canvas,'PNG',prefs.margin,prefs.margin,width,canvas.height*width/canvas.width,undefined,'FAST');
     capture.remove();capture=null;
    }
-   const blobURL=URL.createObjectURL(doc.output('blob')),link=document.createElement('a');
-   link.href=blobURL;link.download=`raspisanie_${printDate}_A4_${prefs.orientation}_${sheets.length}p.pdf`;
-   document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(blobURL),30000);
-   store();draw();$('#print-fit-status').textContent+=' · PDF подготовлен к скачиванию';
+   const saved=await download(`Расписание_${printDate}_A4_${prefs.orientation}_${sheets.length}л.pdf`,doc.output('blob'),'application/pdf');
+   if(saved===false)$('#print-fit-status').textContent='Сохранение PDF отменено.';
+   else{store();draw();$('#print-fit-status').textContent+=' · PDF сохранён'}
   }catch(e){$('#print-fit-status').textContent='Не удалось создать PDF: '+e.message}
   finally{capture?.remove();buttons.forEach(x=>x.disabled=false);if(!classes.length||!allFit){$('#dialog-action-1').disabled=true;$('#dialog-action-2').disabled=true}}
  }},
- {text:'Скачать Word',class:'primary',action:async()=>{
+ {text:'Сохранить Word',class:'primary',action:async()=>{
   readControls();draw();if(!classes.length)return;
   const button=$('#dialog-action-3');button.disabled=true;button.textContent='Готовлю Word…';
   try{
    const doc=WordExport.build({school:db.meta.school,date:printDate,groups:pageGroups,rows,prefs,subject:displaySubject,teacher:l=>short(teacherName(l.teacherId)),className:l=>lookup('classes',l.classId)?.name||'',room:l=>PrintTools.roomNumber(l.roomId?roomName(l.roomId):''),groupLabel:PrintTools.groupLabel,profileLines:(ls,cid)=>prefs.view==='teachers'?ls.map((lesson,start)=>({lesson,lane:null,lanes:Math.max(1,ls.length),start,span:1})):printParts(ls,lookup('classes',cid)?.name)});
    const blob=await docx.Packer.toBlob(doc);
-   download(`Расписание_${printDate}_A4_${prefs.orientation}.docx`,blob,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
-   store();$('#print-fit-status').textContent='Word подготовлен: редактируемая таблица. Разбиение страниц может отличаться от PDF; проверьте перед печатью.';
+   const saved=await download(`Расписание_${printDate}_A4_${prefs.orientation}.docx`,blob,'application/vnd.openxmlformats-officedocument.wordprocessingml.document');
+   if(saved===false)$('#print-fit-status').textContent='Сохранение Word отменено.';
+   else{store();$('#print-fit-status').textContent='Word сохранён: редактируемая таблица. Разбиение страниц может отличаться от PDF; проверьте перед печатью.'}
   }catch(e){$('#print-fit-status').textContent='Не удалось создать Word: '+e.message}
-  finally{button.disabled=false;button.textContent='Скачать Word'}
+  finally{button.disabled=false;button.textContent='Сохранить Word'}
  }}]);
  $('#dialog').classList.add('print-dialog');
  $('#dialog').addEventListener('close',()=>{clearTimeout(drawTimer);$('#dialog').classList.remove('print-dialog')},{once:true});
+ if(native){
+  const folderInput=$('#print-export-directory'),choose=$('#print-export-choose'),reset=$('#print-export-reset');
+  choose.onclick=async()=>{choose.disabled=true;try{const selected=await native.ChooseExportDirectory(exportDirectory);if(selected){exportDirectory=selected;window.localStorage?.setItem('parallel.exportDirectory',selected);folderInput.value=selected;reset.disabled=false}}catch(e){message('Не удалось выбрать папку: '+(e.message||e))}finally{choose.disabled=false}};
+  reset.onclick=()=>{exportDirectory='';window.localStorage?.removeItem('parallel.exportDirectory');folderInput.value='';reset.disabled=true;message('Папка экспорта сброшена. Windows предложит последнюю использованную папку.')};
+ }
  function store(){settings.printLayout={...prefs};dirty=true;render()}
  function readControls(){
   if($('#print-date')?.value&&$('#print-date').value!==printDate){printDate=$('#print-date').value;resetPreviewScroll=true;loadDay()}

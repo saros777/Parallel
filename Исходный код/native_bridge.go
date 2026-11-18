@@ -36,12 +36,13 @@ type DesktopBridge struct {
 	wakeProjects    func()
 	openFile        func(string) (string, error)
 	savePath        func(string, string) (string, error)
+	chooseFolder    func(string) (string, error)
 	handler         http.Handler
 	token           string
 	origin          string
 	dir             string
 	quit            func()
-	saveFile        func(string, []byte) (bool, error)
+	saveFile        func(string, []byte, string) (bool, error)
 }
 type BridgeResponse struct {
 	Status int    `json:"status"`
@@ -135,7 +136,16 @@ func (b *DesktopBridge) requestInternal(path, method, body string) BridgeRespons
 	b.handler.ServeHTTP(out, r)
 	return BridgeResponse{out.Code, out.Body.String()}
 }
-func (b *DesktopBridge) SaveFile(name, data string) (bool, error) {
+func (b *DesktopBridge) ChooseExportDirectory(current string) (string, error) {
+	if err := b.awaitInitialised(); err != nil {
+		return "", err
+	}
+	if b.chooseFolder == nil {
+		return "", errors.New("выбор папки недоступен")
+	}
+	return b.chooseFolder(current)
+}
+func (b *DesktopBridge) SaveFile(name, data, defaultDirectory string) (bool, error) {
 	if err := b.awaitInitialised(); err != nil {
 		return false, err
 	}
@@ -149,7 +159,7 @@ func (b *DesktopBridge) SaveFile(name, data string) (bool, error) {
 	if err != nil {
 		return false, errors.New("неверный формат файла")
 	}
-	return b.saveFile(filepath.Base(name), raw)
+	return b.saveFile(filepath.Base(name), raw, defaultDirectory)
 }
 
 // Index injection selects the native bridge before the application scripts load.

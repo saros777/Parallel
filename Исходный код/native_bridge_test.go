@@ -72,18 +72,28 @@ func TestDesktopAssetsSelectNativeBeforeBoot(t *testing.T) {
 func TestDesktopSaveDialogAndShutdown(t *testing.T) {
 	b, _ := newDesktopBridge(t.TempDir())
 	called := false
-	b.saveFile = func(name string, data []byte) (bool, error) {
+	b.saveFile = func(name string, data []byte, directory string) (bool, error) {
 		called = true
-		if name != "backup.json" || string(data) != "test" {
-			t.Fatal(name, string(data))
+		if name != "backup.json" || string(data) != "test" || directory != `C:\Exports` {
+			t.Fatal(name, string(data), directory)
 		}
 		return true, nil
 	}
-	ok, err := b.SaveFile("../backup.json", base64.StdEncoding.EncodeToString([]byte("test")))
+	b.chooseFolder = func(current string) (string, error) {
+		if current != `C:\Old` {
+			t.Fatal(current)
+		}
+		return `C:\Exports`, nil
+	}
+	chosen, err := b.ChooseExportDirectory(`C:\Old`)
+	if err != nil || chosen != `C:\Exports` {
+		t.Fatal(chosen, err)
+	}
+	ok, err := b.SaveFile("../backup.json", base64.StdEncoding.EncodeToString([]byte("test")), chosen)
 	if err != nil || !ok || !called {
 		t.Fatal(ok, err)
 	}
-	if _, err = b.SaveFile("bad.json", "not base64!"); err == nil {
+	if _, err = b.SaveFile("bad.json", "not base64!", chosen); err == nil {
 		t.Fatal("Invalid file accepted")
 	}
 	quit := make(chan struct{}, 1)

@@ -24,6 +24,7 @@ dialog.print-dialog{width:min(1160px,96vw);max-width:96vw}
 .print-options .hint{font-size:12px;line-height:1.5}
 .print-fields{border:0;border-top:1px solid var(--line);padding:14px 0 3px;margin-top:17px}
 .print-fields legend{font-size:13px;padding-right:8px;font-weight:600}
+.print-export-folder{display:grid;gap:7px}.print-export-folder .field{margin:0}.print-export-folder input{font-size:11px;min-height:32px}.print-export-folder>div{display:flex;gap:6px}.print-export-folder>div button{flex:1}.print-export-folder small{color:var(--muted);line-height:1.35}
 .print-options button{font-size:12px;min-height:32px}
 #print-fit-status{font-size:13px;font-weight:600;line-height:1.5;color:var(--accent)}
 #print-fit-status.print-warning{color:var(--danger)}
