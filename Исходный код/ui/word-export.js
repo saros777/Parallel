@@ -3,13 +3,13 @@
   function build({school,date,groups,rows,prefs,subject,teacher,className,room,groupLabel,profileLines}){
   const D=root.docx,mm=n=>Math.round(n*1440/25.4),land=prefs.orientation==='landscape';
   const pageWidth=land?297:210,pageHeight=land?210:297,horizontalMargin=Math.min(20,prefs.margin+4),max=Math.max(8,...rows.map(l=>l.slot));
-  const firstMM=prefs.view==='teachers'?28:8,slotMM=land?22:19,printableWidth=pageWidth-2*horizontalMargin,width=mm(Math.min(printableWidth,firstMM+max*slotMM));
+  const firstMM=prefs.view==='teachers'?32:8,slotMM=land?22:19,printableWidth=pageWidth-2*horizontalMargin,width=mm(Math.min(printableWidth,firstMM+max*slotMM));
   const first=mm(firstMM),widths=[first,...Array(max).fill(Math.floor((width-first)/max))];widths[widths.length-1]+=width-widths.reduce((a,b)=>a+b,0);
   const font=Math.max(9,prefs.font),border={style:D.BorderStyle.SINGLE,size:4,color:'89939E'};
   let band=false,sectionFont=font,lineTwips=240,lineRule=D.LineRuleType.AUTO;
-  const para=(text,opts={})=>new D.Paragraph({spacing:{before:0,after:0,line:lineTwips,lineRule},...opts,children:[new D.TextRun({text:String(text||''),size:Math.round(sectionFont*2),...(opts.bold?{bold:true}:{})})]});
+  const para=(text,opts={})=>new D.Paragraph({spacing:{before:0,after:0,line:lineTwips,lineRule},...opts,children:[new D.TextRun({text:String(text||''),size:Math.round((opts.fontSize||sectionFont)*2),...(opts.bold?{bold:true}:{})})]});
   const lessonPara=(left,right,cellWidth,opts={})=>new D.Paragraph({spacing:{before:0,after:0,line:lineTwips,lineRule},...opts,tabStops:right?[{type:D.TabStopType.RIGHT,position:Math.max(120,cellWidth-90)}]:undefined,children:[new D.TextRun({text:String(left||''),size:Math.round(sectionFont*2)}),...(right?[new D.TextRun({text:'\t',size:Math.round(sectionFont*2)}),new D.TextRun({text:String(right),size:Math.round(sectionFont*2),bold:true,border:{style:D.BorderStyle.SINGLE,size:3,color:'59636F',space:1}})]:[])]});
-  const cell=(text,i,head=false)=>new D.TableCell({width:{size:widths[i],type:D.WidthType.DXA},verticalAlign:D.VerticalAlign.CENTER,shading:band?{fill:'F0F3F5'}:head?{fill:'EFF2F5'}:undefined,children:Array.isArray(text)?text:[para(text,{bold:head})]});
+  const cell=(text,i,head=false)=>new D.TableCell({width:{size:widths[i],type:D.WidthType.DXA},verticalAlign:D.VerticalAlign.CENTER,shading:band?{fill:'F0F3F5'}:head?{fill:'EFF2F5'}:undefined,children:Array.isArray(text)?text:[para(text,{bold:head,fontSize:i===0&&prefs.view==='teachers'?Math.min(sectionFont,7.5):sectionFont})]});
   const sections=groups.map(g=>{
    band=false;
    // Reserve enough room for the title, Word's mandatory paragraph/table
@@ -37,7 +37,7 @@
     new D.Table({alignment:D.AlignmentType.CENTER,width:{size:width,type:D.WidthType.DXA},columnWidths:widths,layout:D.TableLayoutType.FIXED,borders:{top:border,bottom:border,left:border,right:border,insideHorizontal:border,insideVertical:border},margins:{top:20,bottom:20,left:35,right:35},rows:[head,...data]})
    ]};
   });
-  return new D.Document({creator:'Параллель '+(window.DESKTOP?.version||'5.4.15'),title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
+  return new D.Document({creator:'Параллель '+(window.DESKTOP?.version||'5.4.16'),title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
  }
  root.WordExport={build};
  if(typeof module!=='undefined')module.exports=root.WordExport;

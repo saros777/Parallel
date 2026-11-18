@@ -14,7 +14,7 @@ showPrint=function(initialView){
  let classes=[],rows=[],pageGroups=[];
  const printParts=(lessons,className)=>PrintTools.slotParts(lessons.map(l=>({...l,profileAudience:E.profileAudience(l,db)})),className);
  const checked=k=>prefs[k]?'checked':'';
- dialog('Печать A4 · версия 5.4.15',`<div class="print-presets">
+ dialog('Печать A4 · версия 5.4.16',`<div class="print-presets">
  <button data-print-preset="portrait"><strong>1. Книжный · 1 лист</strong><span>Все классы · предмет + номер</span></button>
  <button data-print-preset="sections"><strong>2. Книжный · крупнее</strong><span>По ступеням · до 3 листов</span></button>
  <button data-print-preset="landscape"><strong>3. Альбомный · 1 лист</strong><span>Дополнительный компактный вариант</span></button>
@@ -45,7 +45,7 @@ showPrint=function(initialView){
    await document.fonts.ready;
    $('#print-fit-status').textContent='Готовлю PDF с фиксированным размером A4…';
    const doc=new jspdf.jsPDF({orientation:prefs.orientation,unit:'mm',format:'a4',compress:true});
-   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.15'});
+   doc.setProperties({title:'Расписание '+printDate,creator:'Параллель 5.4.16'});
    const width=(prefs.orientation==='portrait'?210:297)-prefs.margin*2;
    const sheets=$$('#paper-preview .print-compact-sheet');
    for(let i=0;i<sheets.length;i++){
@@ -109,19 +109,21 @@ showPrint=function(initialView){
    {name:'5–9 классы',classes:classes.filter(c=>(c.grade||parseInt(c.name))>=5&&(c.grade||parseInt(c.name))<=9)},
    {name:'10–11 классы',classes:classes.filter(c=>(c.grade||parseInt(c.name))>=10)}
   ].filter(g=>g.classes.length):[{name:'Все выбранные классы',classes}];
-  if(prefs.view==='teachers'){pageGroups=[];const count=prefs.layout==='sections'?16:26;for(let i=0;i<classes.length;i+=count)pageGroups.push({name:'Учителя',classes:classes.slice(i,i+count)})}
+  if(prefs.view==='teachers'){pageGroups=[];const count=prefs.layout==='sections'?16:Math.max(1,classes.length);for(let i=0;i<classes.length;i+=count)pageGroups.push({name:'Учителя',classes:classes.slice(i,i+count)})}
   const width=(prefs.orientation==='portrait'?210:297)-prefs.margin*2,height=(prefs.orientation==='portrait'?297:210)-prefs.margin*2;
-  const labelWidth=prefs.view==='teachers'?28:8,slotWidth=prefs.orientation==='portrait'?19:22,tableWidth=Math.min(width,labelWidth+max*slotWidth);
+  const labelWidth=prefs.view==='teachers'?32:8,slotWidth=prefs.orientation==='portrait'?19:22,tableWidth=Math.min(width,labelWidth+max*slotWidth);
   const preview=$('#paper-preview');preview.style.width=(width+prefs.margin*2)+'mm';preview.style.padding=prefs.margin+'mm';
   const label=prefs.view==='teachers'?'учителей':'классов';
   $('#print-selection').textContent=`${PrintTools.dateLabel(printDate)} · ${classes.length} ${label} · ${prefs.orientation==='portrait'?'вертикально':'альбомно'}`;
   const cellLines=(c,slot)=>{const ls=rows.filter(l=>l[prefs.view==='teachers'?'teacherId':'classId']===c.id&&l.slot===slot);return prefs.view==='teachers'?ls.map((lesson,start)=>({lesson,lane:null,lanes:Math.max(1,ls.length),start,span:1})):printParts(ls,c.name)},cellHTML=(c,slot)=>{const lines=cellLines(c,slot);return lines.length?`<div class="print-slot-stack" style="--parts:${Math.max(1,...lines.map(x=>x.lanes||1))}">${lines.map(line).join('')}</div>`:'<span class="print-empty">·</span>'};
-  preview.innerHTML=pageGroups.map(g=>{const fill=prefs.layout==='sheet'&&g.classes.length>=18;return `<section class="print-compact-sheet ${fill?'print-fill-page':''}" style="--print-font:${prefs.font}pt;--print-pad:${prefs.orientation==='landscape'?0.3:0.7}mm;--slot-pad:${prefs.orientation==='landscape'?0.15:0.45}mm;--table-width:${tableWidth}mm;--sheet-height:${height-2}mm;width:${width}mm"><header class="print-title"><h1>Расписание ${PrintTools.dateLabel(printDate)}</h1></header><table class="compact-print-table"><colgroup><col style="width:${labelWidth}mm">${Array.from({length:max},()=>'<col>').join('')}</colgroup><thead><tr><th>${prefs.view==='teachers'?'Учитель':'Кл.'}</th>${Array.from({length:max},(_,i)=>`<th>${i+1}</th>`).join('')}</tr></thead><tbody>${g.classes.map((c,j)=>`<tr class="${prefs.banding&&(prefs.view==='teachers'?j%2===1:parseInt(c.name)%2===0)?'print-grade-band':''}"><th scope="row">${h(c.name)}</th>${Array.from({length:max},(_,i)=>`<td>${cellHTML(c,i+1)}</td>`).join('')}</tr>`).join('')}</tbody></table></section>`}).join('');
+  preview.innerHTML=pageGroups.map(g=>{const fill=prefs.layout==='sheet'&&g.classes.length>=18,teacherView=prefs.view==='teachers';return `<section class="print-compact-sheet ${fill?'print-fill-page':''} ${teacherView?'print-teachers':''}" style="--print-font:${prefs.font}pt;--print-label-font:${Math.min(prefs.font,8)}pt;--print-pad:${teacherView?0.25:prefs.orientation==='landscape'?0.3:0.7}mm;--slot-pad:${teacherView?0.12:prefs.orientation==='landscape'?0.15:0.45}mm;--table-width:${tableWidth}mm;--sheet-height:${height-2}mm;width:${width}mm"><header class="print-title"><h1>Расписание ${PrintTools.dateLabel(printDate)}</h1></header><table class="compact-print-table"><colgroup><col style="width:${labelWidth}mm">${Array.from({length:max},()=>'<col>').join('')}</colgroup><thead><tr><th>${teacherView?'Учитель':'Кл.'}</th>${Array.from({length:max},(_,i)=>`<th>${i+1}</th>`).join('')}</tr></thead><tbody>${g.classes.map((c,j)=>`<tr class="${prefs.banding&&(teacherView?j%2===1:parseInt(c.name)%2===0)?'print-grade-band':''}"><th scope="row">${h(c.name)}</th>${Array.from({length:max},(_,i)=>`<td>${cellHTML(c,i+1)}</td>`).join('')}</tr>`).join('')}</tbody></table></section>`}).join('');
   allFit=!!classes.length;const fonts=[];
   $$('#paper-preview .print-compact-sheet').forEach(sheet=>{
-   const limit=height*96/25.4-4,used=()=>Math.max(sheet.getBoundingClientRect().height,sheet.scrollHeight),wide=()=>[...sheet.querySelectorAll('.print-primary-line strong')].some(x=>x.scrollWidth>x.clientWidth+1);let font=prefs.font;
-   if(prefs.fit)while((used()>limit||wide())&&font>9){font=Math.max(9,font-.25);sheet.style.setProperty('--print-font',font+'pt')}
-   if(used()>limit||wide())allFit=false;fonts.push(font);
+   const limit=height*96/25.4-4,used=()=>Math.max(sheet.getBoundingClientRect().height,sheet.scrollHeight),wide=()=>[...sheet.querySelectorAll('.print-primary-line strong')].some(x=>x.scrollWidth>x.clientWidth+1),labelsWide=()=>[...sheet.querySelectorAll('tbody th[scope="row"]')].some(x=>x.scrollWidth>x.clientWidth+1);let font=prefs.font,labelFont=Math.min(prefs.font,8);
+   if(prefs.view==='teachers')while(labelsWide()&&labelFont>6.5){labelFont=Math.max(6.5,labelFont-.25);sheet.style.setProperty('--print-label-font',labelFont+'pt')}
+   const minFont=prefs.view==='teachers'?7.5:9;
+   if(prefs.fit)while((used()>limit||wide())&&font>minFont){font=Math.max(minFont,font-.25);sheet.style.setProperty('--print-font',font+'pt')}
+   if(used()>limit||wide()||labelsWide())allFit=false;fonts.push(font);
   });
   if(resetPreviewScroll){$('.print-preview-scroll').scrollTop=0;$('.print-preview-scroll').scrollLeft=0;resetPreviewScroll=false}
   $('#print-fit-status').textContent=!classes.length?'Нет строк для выбранного дня и классов.':allFit?`${pageGroups.length} ${pageGroups.length===1?'лист':'листа'} A4 · ${prefs.orientation==='portrait'?'книжный':'альбомный'} · ${classes.length} ${label} · ${Math.min(...fonts)} пт`:'Не помещается без обрезки. Выберите макет 2, выключите лишние поля или уменьшите шрифт. Печать заблокирована до исправления.';

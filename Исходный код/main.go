@@ -28,7 +28,7 @@ import (
 //go:embed ui/* ui/fonts/* seed.json
 var bundled embed.FS
 
-const version = "5.4.15"
+const version = "5.4.16"
 const appID = "parallel-school-desktop"
 const scheduleBaselineRevision = 1
 
@@ -190,7 +190,7 @@ func openStore(dir string) (*Store, error) {
 			if err := os.MkdirAll(backupDir, 0700); err != nil {
 				return nil, err
 			}
-			backup := filepath.Join(backupDir, "before-schedule-5.4.15-"+time.Now().UTC().Format("20060102-150405.000000000")+".json")
+			backup := filepath.Join(backupDir, "before-schedule-5.4.16-"+time.Now().UTC().Format("20060102-150405.000000000")+".json")
 			if err := atomicWrite(backup, raw); err != nil {
 				return nil, fmt.Errorf("не удалось сохранить резервную копию перед заменой расписания: %w", err)
 			}
