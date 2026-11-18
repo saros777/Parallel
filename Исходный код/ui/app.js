@@ -4,6 +4,7 @@ const days=['Вс','Пн','Вт','Ср','Чт','Пт','Сб'];
 const fmt=d=>new Date(d+'T12:00:00').toLocaleDateString('ru-RU',{day:'numeric',month:'long'});
 const monday=d=>E.addDays(d,-((new Date(d+'T12:00:00').getDay()+6)%7));
 const short=n=>{const s=(n||'').split(' ');return s[0]+(s[1]?' '+s[1][0]+'.':'')+(s[2]?s[2][0]+'.':'')};
+const classLabel=n=>String(n??'').replace(/[А-ЯЁA-Z](?=\s*$)/u,letter=>letter.toLocaleLowerCase('ru-RU'));
 let db,dirty=false,route='schedule',mode='day',date='2026-09-21',grade='all',classFilter='',teacherFilter='',search='',settings={subject:true,teacher:true,room:true,group:true,abbreviate:true,showCancelled:true,labels:{}},dragId=null,selectedClasses=null,proposal=[];
 const titles={schedule:['Расписание','Вся школа в одном расписании. Базовые уроки и изменения на выбранную дату.'],absences:['Замены и отсутствия','Отмечайте отсутствие, выбирайте замену или отменяйте урок только на нужную дату.'],conflicts:['Контроль расписания','Проверка учителей, кабинетов и пересечений учебных групп.'],directory:['Справочники','Классы, учителя, предметы и учебные планы из рабочего файла.'],history:['История изменений','Каждое действие сохраняет исходное состояние. Последнее действие можно отменить.'],data:['Файлы и помощь','Данные остаются в памяти вкладки. Рабочий JSON сохраняется на ваше устройство.']};
 function makeDemo(){
@@ -24,6 +25,7 @@ function normalize(data){
  // Student PII has no scheduling purpose in this workspace.
  const permitted=['meta','classes','subjects','teachers','rooms','lessons','courses','groups','periods','calendar','calls','teacherSubjects','overrides','extraLessons','absences','history','preferences','baseSchedule'];
  const out=Object.fromEntries(permitted.filter(k=>k in data).map(k=>[k,data[k]]));
+ out.classes=(out.classes||[]).map(c=>({...c,name:classLabel(c.name)}));
  for(const k of ['courses','groups','periods','calendar','calls','teacherSubjects','extraLessons','absences','history'])out[k]??=[];
  out.overrides??={};
  if(typeof out.overrides!=='object'||Array.isArray(out.overrides))throw Error('Неверный формат изменений');

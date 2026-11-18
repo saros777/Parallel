@@ -1,7 +1,7 @@
 /* Desktop UX: all data remain on this computer, not in a cloud preview. */
-$('.brand small').textContent='ВЕРСИЯ 5.4.16 · ДИСПЕТЧЕР';
+$('.brand small').textContent='ВЕРСИЯ 5.4.17 · ДИСПЕТЧЕР';
 titles.data=['Файлы и таблицы','Файлы расписаний · Excel и CSV · Восстановление'];
-$('footer').innerHTML='<span>Параллель 5.4.16 · На вашем компьютере · Без подключения к ВШ</span><button id="exit-application">Сохранить и выйти</button>';
+$('footer').innerHTML='<span>Параллель 5.4.17 · На вашем компьютере · Без подключения к ВШ</span><button id="exit-application">Сохранить и выйти</button>';
 const desktopStatus=renderStatus;
 renderStatus=function(){
  desktopStatus();

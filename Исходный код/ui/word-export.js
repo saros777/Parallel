@@ -3,7 +3,7 @@
   function build({school,date,groups,rows,prefs,subject,teacher,className,room,groupLabel,profileLines}){
   const D=root.docx,mm=n=>Math.round(n*1440/25.4),land=prefs.orientation==='landscape';
   const pageWidth=land?297:210,pageHeight=land?210:297,horizontalMargin=Math.min(20,prefs.margin+4),max=Math.max(8,...rows.map(l=>l.slot));
-  const firstMM=prefs.view==='teachers'?32:8,slotMM=land?22:19,printableWidth=pageWidth-2*horizontalMargin,width=mm(Math.min(printableWidth,firstMM+max*slotMM));
+  const firstMM=prefs.view==='teachers'?32:10,slotMM=land?22:19,printableWidth=pageWidth-2*horizontalMargin,width=mm(Math.min(printableWidth,firstMM+max*slotMM));
   const first=mm(firstMM),widths=[first,...Array(max).fill(Math.floor((width-first)/max))];widths[widths.length-1]+=width-widths.reduce((a,b)=>a+b,0);
   const font=Math.max(9,prefs.font),border={style:D.BorderStyle.SINGLE,size:4,color:'89939E'};
   let band=false,sectionFont=font,lineTwips=240,lineRule=D.LineRuleType.AUTO;
@@ -37,7 +37,7 @@
     new D.Table({alignment:D.AlignmentType.CENTER,width:{size:width,type:D.WidthType.DXA},columnWidths:widths,layout:D.TableLayoutType.FIXED,borders:{top:border,bottom:border,left:border,right:border,insideHorizontal:border,insideVertical:border},margins:{top:20,bottom:20,left:35,right:35},rows:[head,...data]})
    ]};
   });
-  return new D.Document({creator:'Параллель '+(window.DESKTOP?.version||'5.4.16'),title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
+  return new D.Document({creator:'Параллель '+(window.DESKTOP?.version||'5.4.17'),title:'Расписание '+date,description:'Редактируемая таблица расписания',styles:{default:{document:{run:{font:'Calibri',size:font*2},paragraph:{spacing:{before:0,after:0}}}}},sections});
  }
  root.WordExport={build};
  if(typeof module!=='undefined')module.exports=root.WordExport;

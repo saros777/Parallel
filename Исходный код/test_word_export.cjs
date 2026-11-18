@@ -23,7 +23,7 @@ const doc=WordExport.build({
  const xml=await zip.file('word/document.xml').async('string');
  assert.match(xml,/<w:tab w:val="right"/,'room number needs a right tab stop');
  assert.match(xml,/<w:bdr w:val="single"[^>]*w:color="59636F"/,'room number needs its own visible badge border');
- assert.match(xml,/<w:tblW w:type="dxa" w:w="9071"/,'portrait class table should be a compact 160 mm wide');
+ assert.match(xml,/<w:tblW w:type="dxa" w:w="9184"/,'portrait class table should leave enough room for one-line class names');
  assert.match(xml,/<w:jc w:val="center"/,'compact table should be centered on the page');
  assert.match(xml,/<w:pgMar[^>]*w:right="510"[^>]*w:left="510"/,'left and right Word margins should be larger than the base 5 mm margin');
  assert((xml.match(/<w:trHeight /g)||[]).length>=classes.length+1,'a full timetable should use the available A4 height');

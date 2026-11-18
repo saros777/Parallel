@@ -7,5 +7,5 @@ if errorlevel 1 (
   pause
   exit /b 1
 )
-echo Готово: dist\Parallel.exe и dist\Parallel-5.4.16-x64.msi
+echo Готово: dist\Parallel.exe и dist\Parallel-5.4.17-x64.msi
 pause
