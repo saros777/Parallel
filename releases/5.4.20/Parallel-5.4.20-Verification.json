@@ -1,0 +1,111 @@
+{
+  "version": "5.4.20",
+  "sourceCommit": "a712bc41cab9208524b440088403c045327b28ff",
+  "os": "Microsoft Windows NT 10.0.26100.0",
+  "installerFormat": "Windows Installer MSI",
+  "installerScripts": "none",
+  "applicationSignature": "NotSigned: no publisher code-signing certificate provided",
+  "sampleSubmission": "disabled; antivirus remains active",
+  "originalDetection": "5.1: Trojan:Win32/Wacatac.B!ml; cause unconfirmed; installer withdrawn",
+  "checks": {
+    "defenderInstallerAndExecutables": "passed; files retain Internet zone mark",
+    "msiInstallAndInstalledPayloadScan": "passed",
+    "secondInstanceDocumentRequest": "passed; second process exited, first window activated the queued document",
+    "firstInstalledLaunch": {
+      "observedReadyMs": 10486,
+      "elapsedMs": 9467,
+      "stateJSONBytes": 1367009,
+      "stateReadMs": 16,
+      "statePackMs": 7,
+      "stateIPCBytes": 154300,
+      "frontend": {
+        "bootMs": 991.9000000000233,
+        "domReadyMs": 1494.9000000000233,
+        "fetchMs": 367.8999999999651,
+        "jsonMs": 8.899999999965075,
+        "normalizeMs": 1.8000000000465661,
+        "renderMs": 124.20000000001164,
+        "renderSignal": "animation-frame",
+        "signalMs": 2132.100000000035,
+        "visibility": "visible"
+      }
+    },
+    "regularLaunch": {
+      "observedReadyMs": 1524,
+      "elapsedMs": 1461,
+      "stateJSONBytes": 1367009,
+      "stateReadMs": 237,
+      "statePackMs": 6,
+      "stateIPCBytes": 154296,
+      "frontend": {
+        "bootMs": 164.59999999997672,
+        "domReadyMs": 573.2000000000116,
+        "fetchMs": 276.20000000001164,
+        "jsonMs": 5.100000000034925,
+        "normalizeMs": 1,
+        "renderMs": 126.29999999998836,
+        "renderSignal": "animation-frame",
+        "signalMs": 1017.4000000000233,
+        "visibility": "visible"
+      }
+    },
+    "applicationZipDefenderScan": "passed; portable archive and extracted executables",
+    "withoutInstallationLaunch": {
+      "observedReadyMs": 1797,
+      "elapsedMs": 1476,
+      "stateJSONBytes": 1367009,
+      "stateReadMs": 216,
+      "statePackMs": 3,
+      "stateIPCBytes": 154296,
+      "frontend": {
+        "bootMs": 177.79999999998836,
+        "domReadyMs": 580,
+        "fetchMs": 259.20000000001164,
+        "jsonMs": 5.2000000000116415,
+        "normalizeMs": 1.099999999976717,
+        "renderMs": 136.60000000003492,
+        "renderSignal": "animation-frame",
+        "signalMs": 993.0999999999767,
+        "visibility": "visible"
+      }
+    },
+    "installedNativeWindowIpcClose": "passed; verified 862-card recurring workbook baseline; no HTTP listener",
+    "afterRepairViaFileAssociation": {
+      "observedReadyMs": 1955,
+      "elapsedMs": 1538,
+      "stateJSONBytes": 1367069,
+      "stateReadMs": 354,
+      "statePackMs": 3,
+      "stateIPCBytes": 154408,
+      "frontend": {
+        "bootMs": 181.59999999997672,
+        "domReadyMs": 682.0999999999767,
+        "fetchMs": 391.5999999999767,
+        "jsonMs": 5.2999999999883585,
+        "normalizeMs": 0.9000000000232831,
+        "renderMs": 102.5,
+        "renderSignal": "animation-frame",
+        "signalMs": 1052.2000000000116,
+        "visibility": "visible"
+      }
+    },
+    "msiRepairAndExistingWorkspace": "passed",
+    "msiUninstallPreservesWorkspace": "passed",
+    "portableWindows11Arm64": "passed; same native ARM64 executable launched, rendered and closed under Windows 11 Arm",
+    "sourceArchiveDefenderScan": "passed"
+  },
+  "defender": {
+    "engine": "1.1.26100.4",
+    "platform": "4.18.26100.4",
+    "realTimeProtectionEnabled": false,
+    "signatures": "1.463.439.0",
+    "signaturesUpdated": "2026-11-23T14:36:33Z"
+  },
+  "startupBudgetsMs": {
+    "regularLaunch": 5000,
+    "fileAssociation": 8000,
+    "firstWebViewProfile": 20000
+  },
+  "verdict": "All specified checks passed in this environment. This does not clear the reported 5.1 detection or guarantee identical results on another device.",
+  "completedUtc": "2026-11-23T21:38:35.2325281Z"
+}
