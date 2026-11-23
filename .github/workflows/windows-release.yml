@@ -1,4 +1,4 @@
-name: Windows MSI release
+name: Windows MSI and portable release
 on:
   workflow_dispatch:
   push:
@@ -12,7 +12,30 @@ concurrency:
   group: windows-msi-release
   cancel-in-progress: true
 jobs:
+  verify-portable-arm:
+    runs-on: windows-11-arm
+    timeout-minutes: 15
+    outputs:
+      portable-sha256: ${{ steps.portable.outputs.sha256 }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff
+        with:
+          go-version: '1.26.10'
+          cache: false
+      - name: Build and run the portable x86 app on Windows 11 Arm
+        id: portable
+        shell: pwsh
+        working-directory: Исходный код
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ./build/windows/build.ps1 -PortableOnly
+          go test -mod=vendor -run '^TestWebViewBootstrap' .
+          if ($LASTEXITCODE -ne 0) { throw 'Portable WebView2 bootstrapper tests failed' }
+          ./qa/windows-install.ps1 -PortableOnly
+          "sha256=$((Get-FileHash -LiteralPath 'dist/portable/Parallel.exe').Hash)" >> $env:GITHUB_OUTPUT
   build-scan-install:
+    needs: verify-portable-arm
     runs-on: windows-2025
     timeout-minutes: 25
     permissions:
@@ -84,12 +107,16 @@ jobs:
             go build -mod=vendor -buildvcs=false -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel-reproduced.exe .
             if ($LASTEXITCODE -ne 0 -or (Get-FileHash dist/Parallel-reproduced.exe).Hash -ne $first) { throw 'Executable reproducibility check failed' }
             Remove-Item dist/Parallel-reproduced.exe
+            ./build/windows/build.ps1 -PortableOnly
           } catch { Write-Output "::error title=MSI build failed::$($_.Exception.Message)"; throw }
       - name: Defender, real MSI install, native window, repair and uninstall
         shell: pwsh
         working-directory: Исходный код
+        env:
+          PARALLEL_PORTABLE_ARM_SHA256: ${{ needs.verify-portable-arm.outputs.portable-sha256 }}
         run: |
           $ErrorActionPreference = 'Stop'
+          if (-not $env:PARALLEL_PORTABLE_ARM_SHA256) { throw 'Portable Windows 11 Arm verification result missing' }
           try { ./qa/windows-install.ps1 }
           catch {
             $detail = ($_.ToString() + ' ' + $_.ScriptStackTrace) -replace '[\r\n]+',' '
@@ -105,36 +132,36 @@ jobs:
           $findings = @(Get-MpThreat -ErrorAction Stop)
           foreach ($f in $findings) { Write-Output "::error title=Defender detection::$($f.ThreatName)" }
           if ($findings.Count) { throw 'Defender recorded a detection' }
-      - name: Publish only the verified installer, source and report
+      - name: Publish the verified installer, portable archive, source and report
         if: success()
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $PSNativeCommandUseErrorActionPreference = $false
-          $output = Join-Path $PWD 'releases/5.4.19'
+          $output = Join-Path $PWD 'releases/5.4.20'
           New-Item -ItemType Directory -Force $output | Out-Null
-          Copy-Item 'Исходный код/dist/Parallel-5.4.19-x64.msi' $output
-          Copy-Item 'Исходный код/dist/Parallel-5.4.19-App.zip' $output
-          Copy-Item 'Исходный код/dist/Parallel-5.4.19-School.parallel' $output
-          Copy-Item 'Исходный код/dist/Parallel-5.4.19-Verification.json' $output
-          git archive --format=zip --output="$output/Parallel-5.4.19-Source.zip" HEAD 'Исходный код' '.github' '.gitattributes' 'releases/README.md' 'releases/SECURITY_REVIEW_5.1.md'
+          Copy-Item 'Исходный код/dist/Parallel-5.4.20-x64.msi' $output
+          Copy-Item 'Исходный код/dist/Parallel-5.4.20-Portable.zip' $output
+          Copy-Item 'Исходный код/dist/Parallel-5.4.20-School.parallel' $output
+          Copy-Item 'Исходный код/dist/Parallel-5.4.20-Verification.json' $output
+          git archive --format=zip --output="$output/Parallel-5.4.20-Source.zip" HEAD 'Исходный код' '.github' '.gitattributes' 'releases/README.md' 'releases/SECURITY_REVIEW_5.1.md'
           if ($LASTEXITCODE -ne 0) { throw 'Source archive creation failed' }
           $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
-          & $scanner -Scan -ScanType 3 -File "$output/Parallel-5.4.19-Source.zip"
-          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$output/Parallel-5.4.19-Source.zip")) { throw 'Defender rejected source archive; publication blocked' }
+          & $scanner -Scan -ScanType 3 -File "$output/Parallel-5.4.20-Source.zip"
+          if ($LASTEXITCODE -ne 0 -or -not (Test-Path "$output/Parallel-5.4.20-Source.zip")) { throw 'Defender rejected source archive; publication blocked' }
           $findings = @(Get-MpThreat -ErrorAction Stop)
           if ($findings.Count) { throw 'Defender recorded a detection; publication blocked' }
-          $reportPath = "$output/Parallel-5.4.19-Verification.json"
+          $reportPath = "$output/Parallel-5.4.20-Verification.json"
           $report = Get-Content -Raw -LiteralPath $reportPath | ConvertFrom-Json -AsHashtable
           $report.checks.sourceArchiveDefenderScan = 'passed'
           $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath $reportPath -Encoding utf8NoBOM
-          Get-ChildItem $output -File | Where-Object Name -ne 'Parallel-5.4.19-SHA256.txt' | Sort-Object Name | ForEach-Object {
+          Get-ChildItem $output -File | Where-Object Name -ne 'Parallel-5.4.20-SHA256.txt' | Sort-Object Name | ForEach-Object {
             "$((Get-FileHash -LiteralPath $_.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($_.Name)"
-          } | Set-Content -LiteralPath "$output/Parallel-5.4.19-SHA256.txt" -Encoding utf8NoBOM
+          } | Set-Content -LiteralPath "$output/Parallel-5.4.20-SHA256.txt" -Encoding utf8NoBOM
           git config user.name 'Parallel build verification'
           git config user.email 'build-verification@users.noreply.github.com'
-          git add releases/5.4.19
-          git commit -m 'Publish Windows-tested MSI 5.4.19, matching source and verification report'
+          git add releases/5.4.20
+          git commit -m 'Publish Windows-tested MSI and portable ZIP 5.4.20'
           if ($LASTEXITCODE -ne 0) { throw 'Verified output commit failed' }
           git ls-remote --exit-code --heads origin refs/heads/codex/parallel-5.4-files | Out-Null
           if ($LASTEXITCODE -eq 0) {

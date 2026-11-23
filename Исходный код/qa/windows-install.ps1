@@ -1,11 +1,12 @@
+param([switch]$PortableOnly)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
-$msi = Join-Path $root 'dist\Parallel-5.4.19-x64.msi'
+$msi = Join-Path $root 'dist\Parallel-5.4.20-x64.msi'
 $install = Join-Path $env:LOCALAPPDATA 'Programs\ParallelDesktop'
 $data = Join-Path $env:LOCALAPPDATA 'ParallelSchool'
 $scanner = Join-Path $env:ProgramFiles 'Windows Defender\MpCmdRun.exe'
 $report = [ordered]@{
-    version = '5.4.19'; sourceCommit = (git -C $root rev-parse HEAD)
+    version = '5.4.20'; sourceCommit = (git -C $root rev-parse HEAD)
     os = [Environment]::OSVersion.VersionString
     installerFormat = 'Windows Installer MSI'; installerScripts = 'none'
     applicationSignature = 'NotSigned: no publisher code-signing certificate provided'
@@ -25,7 +26,7 @@ function Invoke-Msi([string]$Operation, [string]$LogName) {
         throw "MSI $Operation failed with exit $($p.ExitCode)"
     }
 }
-$project = Join-Path $env:RUNNER_TEMP 'Parallel-5.4.19-School.parallel'
+$project = Join-Path $env:RUNNER_TEMP 'Parallel-5.4.20-School.parallel'
 function Write-Fixture([string]$Marker = '') {
     $rawPath = Join-Path $env:RUNNER_TEMP 'parallel-fixture-state.json'
     node (Join-Path $PSScriptRoot 'project-fixture.cjs') $rawPath
@@ -96,7 +97,51 @@ function Run-NativeWindow([switch]$Association, [switch]$Warm, [string]$Executab
         if ($app.ExitCode -ne 0) { throw "Native application failed at close: $($app.ExitCode)" }
     } finally { if (-not $app.HasExited) { $app.Kill() } }
 }
+function Test-PortableArchive([switch]$Scan) {
+    $portable = Join-Path $root 'dist\portable'
+    $exe = Join-Path $portable 'Parallel.exe'
+    $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($exe))
+    try {
+        $reader.BaseStream.Position = 0x3c
+        $reader.BaseStream.Position = $reader.ReadInt32()
+        if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x14c) {
+            throw 'Portable EXE must be a 32-bit x86 Windows executable'
+        }
+    } finally { $reader.Dispose() }
+    $paths = @($exe, (Join-Path $portable 'MicrosoftEdgeWebview2Setup.exe'), (Join-Path $root 'build\windows\README-app.txt'))
+    $appZip = Join-Path $root 'dist\Parallel-5.4.20-Portable.zip'
+    Compress-Archive -LiteralPath $paths -DestinationPath $appZip -Force
+    if ($Scan) {
+        Set-Content -LiteralPath $appZip -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
+        Scan-Path $appZip
+    }
+    $unpacked = Join-Path $env:RUNNER_TEMP 'parallel-without-install'
+    Expand-Archive -LiteralPath $appZip -DestinationPath $unpacked
+    foreach ($source in $paths) {
+        $copy = Join-Path $unpacked (Split-Path -Leaf $source)
+        if ((Get-FileHash -LiteralPath $copy).Hash -ne (Get-FileHash -LiteralPath $source).Hash) {
+            throw "Portable ZIP payload mismatch: $copy"
+        }
+    }
+    if ($Scan) {
+        foreach ($name in @('Parallel.exe','MicrosoftEdgeWebview2Setup.exe')) {
+            Set-Content -LiteralPath (Join-Path $unpacked $name) -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
+        }
+        Scan-Path $unpacked
+        $report.checks.applicationZipDefenderScan = 'passed; portable archive and extracted executables'
+    }
+    Run-NativeWindow -Warm -Executable (Join-Path $unpacked 'Parallel.exe') -RunLabel 'withoutInstallationLaunch'
+}
 try {
+    if (Test-Path $data) { throw 'Dedicated clean Windows test machine required: default data folder already exists' }
+    if ($PortableOnly) {
+        if ([Runtime.InteropServices.RuntimeInformation]::OSArchitecture -ne 'Arm64') {
+            throw 'Portable Arm smoke test requires Windows on Arm'
+        }
+        Write-Fixture
+        Test-PortableArchive
+        return
+    }
     $status = Get-MpComputerStatus
     if (-not $status.AMServiceEnabled -or -not $status.AntivirusEnabled) { throw 'Defender must be active' }
     $report.defender = [ordered]@{
@@ -104,7 +149,6 @@ try {
         realTimeProtectionEnabled = $status.RealTimeProtectionEnabled
         signatures = $status.AntivirusSignatureVersion; signaturesUpdated = $status.AntivirusSignatureLastUpdated.ToUniversalTime().ToString('o')
     }
-    if (Test-Path $data) { throw 'Dedicated clean Windows test machine required: default data folder already exists' }
     # Preserve the downloaded-file mark while scanning. Never unblock the file.
     foreach ($markedFile in @($msi, (Join-Path $root 'dist\Parallel.exe'), (Join-Path $root 'dist\MicrosoftEdgeWebview2Setup.exe'))) {
         Set-Content -LiteralPath $markedFile -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
@@ -122,23 +166,13 @@ try {
     }
     Scan-Path $install
     $report.checks.msiInstallAndInstalledPayloadScan = 'passed'
-    $appZip = Join-Path $root 'dist\Parallel-5.4.19-App.zip'
-    Compress-Archive -LiteralPath @((Join-Path $root 'dist\Parallel.exe'),(Join-Path $root 'dist\MicrosoftEdgeWebview2Setup.exe'),(Join-Path $root 'build\windows\README-app.txt')) -DestinationPath $appZip
-    Scan-Path $appZip
-    $unpacked = Join-Path $env:RUNNER_TEMP 'parallel-without-install'
-    Expand-Archive -LiteralPath $appZip -DestinationPath $unpacked
-    foreach ($name in @('Parallel.exe','MicrosoftEdgeWebview2Setup.exe')) {
-        if ((Get-FileHash (Join-Path $unpacked $name)).Hash -ne (Get-FileHash (Join-Path $root "dist\$name")).Hash) { throw "Application ZIP mismatch: $name" }
-    }
-    $report.checks.applicationZipDefenderScan = 'passed'
-
     Write-Fixture
     Write-Output '::notice title=Schedule fixture::Full original database prepared'
-    Copy-Item -LiteralPath $project -Destination (Join-Path $root 'dist\Parallel-5.4.19-School.parallel')
-    Scan-Path (Join-Path $root 'dist\Parallel-5.4.19-School.parallel')
+    Copy-Item -LiteralPath $project -Destination (Join-Path $root 'dist\Parallel-5.4.20-School.parallel')
+    Scan-Path (Join-Path $root 'dist\Parallel-5.4.20-School.parallel')
     Run-NativeWindow
     Run-NativeWindow -Warm
-    Run-NativeWindow -Warm -Executable (Join-Path $unpacked 'Parallel.exe') -RunLabel 'withoutInstallationLaunch'
+    Test-PortableArchive -Scan
     $report.checks.installedNativeWindowIpcClose = 'passed; verified 862-card recurring workbook baseline; no HTTP listener'
     $statePath = Join-Path $data 'workspace.json'
     Write-Fixture 'preserve-existing-workspace'
@@ -154,6 +188,12 @@ try {
     if ((Get-FileHash -LiteralPath $statePath).Hash -ne $savedHash) { throw 'Uninstall removed or changed the saved workspace' }
     if ((Get-FileHash -LiteralPath $project).Hash -ne $projectHash) { throw 'Uninstall removed or changed the schedule document' }
     $report.checks.msiUninstallPreservesWorkspace = 'passed'
+    if ($env:PARALLEL_PORTABLE_ARM_SHA256) {
+        if ((Get-FileHash (Join-Path $root 'dist\portable\Parallel.exe')).Hash -ne $env:PARALLEL_PORTABLE_ARM_SHA256) {
+            throw 'Portable EXE differs from the one tested on Windows 11 Arm'
+        }
+        $report.checks.portableWindows11Arm64 = 'passed; same x86 executable launched, rendered and closed under Windows 11 Arm'
+    }
     if ($report.checks.withoutInstallationLaunch.elapsedMs -gt 8000) { throw 'Extracted EXE startup exceeded 8 seconds' }
     $report.startupBudgetsMs = @{firstWebViewProfile=20000;regularLaunch=5000;fileAssociation=8000}
     if ($report.checks.regularLaunch.elapsedMs -gt 5000) { throw "Regular startup exceeded 5 seconds: $($report.checks.regularLaunch.elapsedMs) ms" }
@@ -163,7 +203,7 @@ try {
     if ($threats.Count) { throw "Defender recorded detections: $(($threats | ForEach-Object ThreatName) -join ', ')" }
     $report.verdict = 'All specified checks passed in this environment. This does not clear the reported 5.1 detection or guarantee identical results on another device.'
     $report.completedUtc = [DateTime]::UtcNow.ToString('o')
-    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'dist\Parallel-5.4.19-Verification.json') -Encoding utf8NoBOM
+    $report | ConvertTo-Json -Depth 12 | Set-Content -LiteralPath (Join-Path $root 'dist\Parallel-5.4.20-Verification.json') -Encoding utf8NoBOM
 } catch {
     $message = $_.Exception.Message -replace '[\r\n]+',' '
     Write-Output "::error title=Windows installer validation failed::$message"
