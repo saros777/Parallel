@@ -290,32 +290,28 @@ renderSchedule=function(){
  if(typeof studioRememberCells==='function')studioRememberCells(paint);bindCards();studioBindHover();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
 };
 function studioBindHover(){
- const table=$('.studio-matrix'),rows=Array.from(table.tBodies[0].rows);
- const heads=Array.from(table.tHead.rows[1].cells),foot=table.tFoot?.rows[0];
- let row=null,column=-1;
+ const table=$('.studio-matrix'),body=table.tBodies[0],heads=table.tHead.rows[1].cells;
+ let row=null,column=null;
  const mark=(nextRow,nextColumn)=>{
   if(nextRow!==row){
-   row?.classList.remove('studio-hover-row');
-   nextRow?.classList.add('studio-hover-row');
+   row?.classList.remove('studio-hover-head');
+   nextRow?.classList.add('studio-hover-head');
    row=nextRow;
   }
-  if(nextColumn===column)return;
-  for(const tr of rows){
-   if(column>=0)tr.cells[column+1].classList.remove('studio-hover-column');
-   if(nextColumn>=0)tr.cells[nextColumn+1].classList.add('studio-hover-column');
+  if(nextColumn!==column){
+   column?.classList.remove('studio-hover-head');
+   nextColumn?.classList.add('studio-hover-head');
+   column=nextColumn;
   }
-  if(column>=0){heads[column].classList.remove('studio-hover-column');foot?.cells[column+1].classList.remove('free-focus')}
-  if(nextColumn>=0){heads[nextColumn].classList.add('studio-hover-column');foot?.cells[nextColumn+1].classList.add('free-focus')}
-  column=nextColumn;
  };
  table.onpointerover=e=>{
   const cell=e.target.closest('th,td');
   if(!cell||cell.contains(e.relatedTarget))return;
-  const body=cell.parentElement.parentElement===table.tBodies[0];
-  const nextColumn=body||cell.parentElement===foot?cell.cellIndex-1:heads.indexOf(cell);
-  mark(body?cell.parentElement:null,nextColumn);
+  const tr=cell.parentElement;
+  if(tr.parentElement===body)mark(tr.cells[0],heads[cell.cellIndex-1]||null);
+  else mark(null,cell.matches('[data-col-head]')?cell:null);
  };
- table.onpointerleave=()=>mark(null,-1);
+ table.onpointerleave=()=>mark(null,null);
 }
 bindCards=function(){
  if(route!=='schedule'){ // Existing replacement desk uses selection, not pickup.
