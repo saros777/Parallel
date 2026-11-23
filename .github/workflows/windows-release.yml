@@ -29,7 +29,7 @@ jobs:
         working-directory: Исходный код
         run: |
           $ErrorActionPreference = 'Stop'
-          ./build/windows/build.ps1 -PortableOnly -PortableArch arm64
+          ./build/windows/build.ps1 -Arm64Only
           go test -mod=vendor -run '^TestWebViewBootstrap' .
           if ($LASTEXITCODE -ne 0) { throw 'Portable WebView2 bootstrapper tests failed' }
           $key = 'Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
@@ -120,8 +120,7 @@ jobs:
             go build -mod=vendor -buildvcs=false -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o dist/Parallel-reproduced.exe .
             if ($LASTEXITCODE -ne 0 -or (Get-FileHash dist/Parallel-reproduced.exe).Hash -ne $first) { throw 'Executable reproducibility check failed' }
             Remove-Item dist/Parallel-reproduced.exe
-            ./build/windows/build.ps1 -PortableOnly
-            ./build/windows/build.ps1 -PortableOnly -PortableArch arm64
+            ./build/windows/build.ps1 -Arm64Only
           } catch { Write-Output "::error title=MSI build failed::$($_.Exception.Message)"; throw }
       - name: Defender, real MSI install, native window, repair and uninstall
         timeout-minutes: 7

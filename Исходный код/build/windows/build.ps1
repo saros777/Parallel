@@ -1,14 +1,14 @@
-param([switch]$ExecutableOnly, [switch]$PortableOnly, [ValidateSet('386','arm64')][string]$PortableArch = '386')
+param([switch]$ExecutableOnly, [switch]$Arm64Only)
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Push-Location $root
 try {
-    $destination = if ($PortableOnly) { 'dist/portable' } else { 'dist' }
-    $executable = if ($PortableOnly -and $PortableArch -eq 'arm64') { 'Parallel-Arm64.exe' } else { 'Parallel.exe' }
+    $destination = if ($Arm64Only) { 'dist/portable' } else { 'dist' }
+    $executable = if ($Arm64Only) { 'Parallel-Arm64.exe' } else { 'Parallel.exe' }
     New-Item -ItemType Directory -Force $destination | Out-Null
     $env:CGO_ENABLED = '0'
     $env:GOOS = 'windows'
-    $env:GOARCH = if ($PortableOnly) { $PortableArch } else { 'amd64' }
+    $env:GOARCH = if ($Arm64Only) { 'arm64' } else { 'amd64' }
     # Record provenance separately so checkout paths/state cannot change EXE bytes.
     go build -mod=vendor -buildvcs=false -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o "$destination/$executable" .
     if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
@@ -18,7 +18,7 @@ try {
         throw "Microsoft bootstrapper signature is not valid: $($signature.Status)"
     }
     Copy-Item -LiteralPath $bootstrap -Destination "$destination/MicrosoftEdgeWebview2Setup.exe"
-    if ($ExecutableOnly -or $PortableOnly) { return }
+    if ($ExecutableOnly -or $Arm64Only) { return }
     # WiX is developer-only. The installed application needs no .NET or WiX.
     dotnet tool restore
     if ($LASTEXITCODE -ne 0) { throw 'WiX tool restore failed' }

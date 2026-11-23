@@ -2,14 +2,14 @@
 
 Файлы находятся в ветке `codex/parallel-5.4-files`, папке `releases/5.4.20`:
 
-- `Parallel-5.4.20-Portable.zip` — один архив для Windows 10/11 на x64 и Arm64, а также 32-разрядной Windows 10;
+- `Parallel-5.4.20-Portable.zip` — один архив для Windows 10/11 на x64 и Arm64;
 - `Parallel-5.4.20-x64.msi` — установщик Windows 10/11 x64;
 - `Parallel-5.4.20-Source.zip` — весь проект с зависимостями и сборкой;
 - `Parallel-5.4.20-School.parallel` — исходное школьное расписание отдельным документом;
 - `Parallel-5.4.20-Verification.json` — результаты Windows-проверки и время запуска;
 - `Parallel-5.4.20-SHA256.txt` — контрольные суммы.
 
-Для запуска без установки распакуйте ZIP целиком. Откройте `Parallel.exe` на x64 или 32-разрядной Windows, а на Windows Arm64 — `Parallel-Arm64.exe`. Если WebView2 ещё отсутствует, для его установки потребуется интернет.
+Для запуска без установки распакуйте ZIP целиком. Откройте `Parallel.exe` на Windows x64, а на Windows Arm64 — `Parallel-Arm64.exe`. Если WebView2 ещё отсутствует, для его установки потребуется интернет.
 
 Запуск приложения из ZIP проверяется на Windows x64 и Windows 11 Arm. Установка MSI проверяется на Windows x64.
 

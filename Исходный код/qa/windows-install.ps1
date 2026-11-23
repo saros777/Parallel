@@ -99,10 +99,10 @@ function Run-NativeWindow([switch]$Association, [switch]$Warm, [string]$Executab
 }
 function Test-PortableArchive([switch]$Scan, [switch]$Arm64) {
     $portable = Join-Path $root 'dist\portable'
-    $portableExecutables = if ($Arm64) { @{'Parallel-Arm64.exe'=0xaa64} } else { @{'Parallel.exe'=0x14c; 'Parallel-Arm64.exe'=0xaa64} }
+    $portableExecutables = if ($Arm64) { @{'Parallel-Arm64.exe'=0xaa64} } else { @{'Parallel.exe'=0x8664; 'Parallel-Arm64.exe'=0xaa64} }
     $paths = @((Join-Path $portable 'MicrosoftEdgeWebview2Setup.exe'), (Join-Path $root 'build\windows\README-app.txt'))
     foreach ($name in $portableExecutables.Keys) {
-        $exe = Join-Path $portable $name
+        $exe = if ($name -eq 'Parallel.exe') { Join-Path $root 'dist\Parallel.exe' } else { Join-Path $portable $name }
         $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($exe))
         try {
             $reader.BaseStream.Position = 0x3c
@@ -131,9 +131,8 @@ function Test-PortableArchive([switch]$Scan, [switch]$Arm64) {
         foreach ($source in @($appZip, (Join-Path $unpacked 'Parallel.exe'), (Join-Path $unpacked 'Parallel-Arm64.exe'), (Join-Path $unpacked 'MicrosoftEdgeWebview2Setup.exe'))) {
             $marked = Copy-Item -LiteralPath $source -Destination $scanDir -PassThru
             Set-Content -LiteralPath $marked.FullName -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
-            Write-Output "::notice title=Portable scan::$(Split-Path -Leaf $source)"
-            Scan-Path $marked.FullName
         }
+        Scan-Path $scanDir
         $report.checks.applicationZipDefenderScan = 'passed; portable archive and extracted executables'
     }
     $executable = if ($Arm64) { 'Parallel-Arm64.exe' } else { 'Parallel.exe' }
