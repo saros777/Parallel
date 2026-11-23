@@ -72,19 +72,45 @@ function studioContext(){
  if(studioPeriod==='base')return {...db,basePreview:true,baseSchedule:null,lessons:SM.template(db),overrides:{},extraLessons:[],absences:[],calendar:[]};
  return db;
 }
+function studioRoomPosition(l){return [l.teacherId,l.classId,l.date,l.slot,!!l.cancelled,!!l.parked,!!l.suspended,l.cycleWeeks,l.cyclePhase].join('|')}
 function studioApply(label,patches,forced=false,carryId=null){
  studioCancel();$('#dialog').close();
  transact(label,()=>{
-  const changes=patches.map(p=>({...p,after:{...p.after,placementForced:forced}}));
-  if(studioPeriod==='base')SM.commitBase(db,changes);
-  else changes.forEach(p=>{if(!db.lessons.some(l=>l.id===p.id)&&!SM.expand(db).some(l=>l.id===p.id)&&!db.extraLessons.some(l=>l.id===p.id))db.extraLessons.push(p.after);else db.overrides[p.id]={...db.overrides[p.id],...p.after}});
+  const changes=patches.map(p=>({...p,after:{...p.after,placementForced:forced||(
+   E.roomOnlyChange(p.before,p.after)&&!!p.before.placementForced)}}));
+  const affectedDates=new Set(changes.filter(({before,after})=>
+   studioRoomPosition(before)!==studioRoomPosition(after)||before.roomMode!==after.roomMode||
+   before.roomId!==after.roomId||(after.roomHint===null&&before.roomHint!=null)
+  ).flatMap(p=>[p.before.date,p.after.date]));
+  const editedIds=new Set(changes.map(p=>p.id));
+  const retained=studioRows.flatMap(l=>{
+   if(!affectedDates.has(l.date)||editedIds.has(l.id)||!W.active(l))return [];
+   const hint=RoomAllocator.roomHint(settings.roomPolicy,l);
+   return hint&&JSON.stringify(hint)!==JSON.stringify(l.roomHint)?[{id:l.id,after:{...l,roomHint:hint}}]:[];
+  });
+  if(studioPeriod==='base'){
+   const template=new Map(SM.template(db).map(l=>[l.id,l]));
+   SM.commitBase(db,[...changes,...retained.map(({id,after})=>({id,after:{...template.get(id),roomHint:after.roomHint}}))]);
+  }
+  else{
+   const knownIds=new Set(SM.expand(db).map(l=>l.id));
+   for(const {id,after} of changes){
+    if(knownIds.has(id))db.overrides[id]={...db.overrides[id],...after};
+    else db.extraLessons.push(after);
+   }
+   for(const {id,after} of retained)db.overrides[id]={...db.overrides[id],roomHint:after.roomHint};
+  }
  });
  // A click on an occupied cell completes the exchange in one undoable
  // transaction, then immediately continues with the displaced card.
  if(carryId&&studioRows.some(l=>l.id===carryId&&!l.cancelled))studioTake(carryId);
 }
 function studioCheck(raw){
- const result=W.assess(studioWork,raw);
+ const patches=raw.map(p=>{
+  const retain=p.after.roomMode==='auto'&&studioRoomPosition(p.before)===studioRoomPosition(p.after)&&p.after.roomHint!==null;
+  return {...p,after:{...p.after,roomHint:retain?RoomAllocator.roomHint(settings.roomPolicy,p.before):null}};
+ });
+ const result=W.assess(studioWork,patches);
  const restrictions=raw.flatMap(p=>[...SM.restrictions(p.after,db),...(E.absenceFor(p.after,studioWork)?['Учитель отмечен отсутствующим']:[])].map(kind=>({kind,lessonIds:[p.id]})));
  return {patches:result.patches,issues:[...result.issues,...restrictions]};
 }
@@ -98,8 +124,8 @@ function studioPopup(title,body,actions){
  const r=panel.getBoundingClientRect();panel.style.left=Math.max(6,Math.min(studioPointer.x+12,innerWidth-r.width-6))+'px';panel.style.top=Math.max(6,Math.min(studioPointer.y+12,innerHeight-r.height-6))+'px';
  panel.querySelector('[data-pop-action]')?.focus({preventScroll:true});
 }
-function studioConfirm(label,raw,carryId=null){
- const r=studioCheck(raw),issues=carryId?r.issues.filter(x=>!(x.lessonIds||[]).includes(carryId)):r.issues,notes=[...new Set(issues.map(x=>x.kind))];
+function studioConfirm(label,raw,carryId=null,roomOnly=false){
+ const r=studioCheck(raw),issues=r.issues.filter(x=>!x.lessonIds?.includes(carryId)&&(!roomOnly||x.kind==='Кабинет занят одновременно'||x.kind==='Нет свободного кабинета')),notes=[...new Set(issues.map(x=>x.kind))];
  if(!notes.length){studioApply(label,r.patches,false,carryId);return}
  const moving=new Set(raw.map(p=>p.id));
  const otherIds=new Set(issues.flatMap(i=>i.lessonIds||[]).filter(id=>!moving.has(id)));
@@ -236,7 +262,7 @@ renderSchedule=function(){
  const periodRows=(studioPeriod==='base'?E.effective(studioWork):E.effectiveBetween(studioWork,studioDates[0],studioDates.at(-1))).filter(l=>studioDates.includes(l.date));
  const carried=studioPeriod==='weeks'?[...new Map(E.effective(db).filter(l=>l.parkingArea==='side'&&!l.cancelled&&l.date<=studioDates.at(-1)).map(l=>[String(l.id).split('@')[0],l])).values()]:[];
  studioRows=[...new Map([...periodRows,...carried].map(l=>[l.id,l])).values()];
- studioWork={...studioWork,baseSchedule:null,lessons:studioRows,extraLessons:[],overrides:{}};
+ studioWork={...studioWork,baseSchedule:null,lessons:studioRows.map(l=>({...l,roomHint:RoomAllocator.roomHint(settings.roomPolicy,l)})),extraLessons:[],overrides:{}};
  const ids=new Set(selected().map(c=>c.id));
  const current=periodRows.filter(l=>!l.cancelled),visible=current.filter(l=>ids.has(l.classId));
  const side=[...new Map([...carried,...current.filter(l=>l.suspended)].map(l=>[l.id,l])).values()];
@@ -261,13 +287,35 @@ renderSchedule=function(){
  $('#studio-absence').onclick=()=>{if(studioPeriod==='base'){studioPeriod='weeks';date=SM.anchor(db);render()}showAbsence()};
  $('#studio-print').onclick=()=>showPrint();$('#studio-calculate').onclick=()=>studioPeriod==='base'?showBaseGenerator():showRebuild();
  $('#studio-undo').onclick=undo;$('#studio-redo').onclick=redo;studioBindTrayFilters();
- if(typeof studioRememberCells==='function')studioRememberCells(paint);bindCards();studioBindFreeRooms();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
+ if(typeof studioRememberCells==='function')studioRememberCells(paint);bindCards();studioBindHover();studioBindSplit();studioResizeObserver?.disconnect();studioResizeObserver=new ResizeObserver(studioFit);studioResizeObserver.observe($('.studio-grid'));studioFit();
 };
-function studioBindFreeRooms(){
- const cells=$$('.studio-matrix tfoot td');if(!cells.length)return;
- const mark=(d,slot)=>{cells.forEach(x=>x.classList.remove('free-focus'));const i=studioDates.indexOf(d)*studioSlots+(+slot-1);if(cells[i])cells[i].classList.add('free-focus')};
- $$('[data-col-head]').forEach(x=>x.onpointerenter=()=>{const [d,slot]=x.dataset.colHead.split('|');mark(d,slot)});
- $$('[data-entity]').forEach(x=>x.addEventListener('pointerenter',()=>mark(x.dataset.date,x.dataset.slot)));
+function studioBindHover(){
+ const table=$('.studio-matrix'),rows=Array.from(table.tBodies[0].rows);
+ const heads=Array.from(table.tHead.rows[1].cells),foot=table.tFoot?.rows[0];
+ let row=null,column=-1;
+ const mark=(nextRow,nextColumn)=>{
+  if(nextRow!==row){
+   row?.classList.remove('studio-hover-row');
+   nextRow?.classList.add('studio-hover-row');
+   row=nextRow;
+  }
+  if(nextColumn===column)return;
+  for(const tr of rows){
+   if(column>=0)tr.cells[column+1].classList.remove('studio-hover-column');
+   if(nextColumn>=0)tr.cells[nextColumn+1].classList.add('studio-hover-column');
+  }
+  if(column>=0){heads[column].classList.remove('studio-hover-column');foot?.cells[column+1].classList.remove('free-focus')}
+  if(nextColumn>=0){heads[nextColumn].classList.add('studio-hover-column');foot?.cells[nextColumn+1].classList.add('free-focus')}
+  column=nextColumn;
+ };
+ table.onpointerover=e=>{
+  const cell=e.target.closest('th,td');
+  if(!cell||cell.contains(e.relatedTarget))return;
+  const body=cell.parentElement.parentElement===table.tBodies[0];
+  const nextColumn=body||cell.parentElement===foot?cell.cellIndex-1:heads.indexOf(cell);
+  mark(body?cell.parentElement:null,nextColumn);
+ };
+ table.onpointerleave=()=>mark(null,-1);
 }
 bindCards=function(){
  if(route!=='schedule'){ // Existing replacement desk uses selection, not pickup.
@@ -305,17 +353,57 @@ function studioOpenTrayMenu(anchor,area,mode){
 }
 function studioRoomEditor(id){
  const old=studioRows.find(l=>l.id===id);if(!old)return;
- const rooms=studioRoomChoices(old);
- dialog('Кабинет · '+studioBrief(old),`<label class="field">Назначение кабинета<select id="studio-quick-room"><option value="__auto" ${old.roomMode!=='manual'?'selected':''}>Подобрать автоматически</option><option value="__none" ${old.roomMode==='manual'&&!old.roomId?'selected':''}>Нет</option>${rooms.map(({room,free})=>`<option value="${h(room.id)}" ${old.roomId===room.id&&old.roomMode==='manual'?'selected':''}>${h(PrintTools.roomNumber(room.name)||room.name)} · ${free?'свободен':'занят'}</option>`).join('')}</select></label><p class="hint"><span class="room-free-key">Свободные кабинеты отмечены зелёным</span>. «Нет» сохраняет урок без кабинета; автоподбор использует правила учителя.</p>`,[{text:'Отмена',action:()=>$('#dialog').close()},{text:'Полное редактирование',action:()=>showLesson(id)},{text:'Сохранить кабинет',class:'primary',action:()=>{const value=$('#studio-quick-room').value,automatic=value==='__auto',roomId=automatic||value==='__none'?null:value;studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:automatic?'auto':'manual'}}])}}]);
+ dialog('Кабинет · '+studioBrief(old),`${studioRoomScope(old)}<label class="field">Назначение кабинета<select id="studio-quick-room"></select></label>`,[
+  {text:'Отмена',action:()=>$('#dialog').close()},
+  {text:'Полное редактирование',action:()=>showLesson(id)},
+  {text:'Сохранить кабинет',class:'primary',action:()=>studioSaveRoom(old,$('#studio-quick-room').value,$('#studio-room-day')?.checked)}
+ ]);
+ const select=$('#studio-quick-room'),scope=$('#studio-room-day');
+ const update=()=>{
+  const current=select.value||(old.roomMode==='manual'?old.roomId||'__none':'__auto');
+  select.innerHTML='<option value="__auto">Подобрать автоматически</option><option value="__none">Нет</option>'+studioRoomChoices(studioRoomLessons(old,scope?.checked)).map(({room,free})=>`<option value="${h(room.id)}">${h(PrintTools.roomNumber(room.name)||room.name)} · ${free?'свободен':'занят'}</option>`).join('');
+  select.value=current;
+ };
+ if(scope)scope.onchange=update;
+ update();
 }
-function studioRoomChoices(old){
+function studioRoomScope(old){
+ const label=studioPeriod==='base'?'Для всех уроков учителя в этот день недели':'Для всех уроков учителя на эту дату';
+ return old.teacherId?`<label class="checkbox-line"><input id="studio-room-day" type="checkbox"> ${label}</label>`:'';
+}
+function studioRoomLessons(old,wholeDay){
+ if(!wholeDay)return [old];
+ return studioRows.filter(l=>l.id===old.id||l.date===old.date&&l.teacherId===old.teacherId&&W.active(l));
+}
+function studioSaveRoom(old,value,wholeDay){
+ const roomMode=value==='__auto'?'auto':'manual',roomId=value==='__auto'||value==='__none'?null:value;
+ const patches=studioRoomLessons(old,wholeDay).map(l=>({id:l.id,before:l,after:{...l,roomId,roomMode,roomHint:null}}));
+ studioConfirm(wholeDay?'Кабинет учителя на день':'Изменение кабинета',patches,null,true);
+}
+function studioRoomChoices(lessons){
+ const editing=new Set(lessons.map(l=>l.id));
+ const occupied=new Set(studioRows.filter(x=>x.roomId&&!editing.has(x.id)&&lessons.some(l=>E.overlap(l,x))).map(x=>x.roomId));
  const rooms=[...db.rooms].sort((a,b)=>(PrintTools.roomNumber(a.name)||a.name).localeCompare(PrintTools.roomNumber(b.name)||b.name,'ru',{numeric:true,sensitivity:'base'}));
- const occupied=new Set(studioRows.filter(x=>x.id!==old.id&&!x.cancelled&&!x.parked&&!x.suspended&&E.overlap(old,x)&&x.roomId).map(x=>x.roomId));
  return rooms.map(room=>({room,free:!occupied.has(room.id)}));
 }
 function studioRoomMenu(anchor,id){
- document.querySelector('#studio-room-menu')?.remove();const old=studioRows.find(l=>l.id===id);if(!old)return;const menu=document.createElement('div');menu.id='studio-room-menu';menu.innerHTML=`<strong>${h(studioSubject(old))} · ${h(lookup('classes',old.classId)?.name)}</strong><div class="studio-room-options"><button type="button" data-room-value="__auto" class="${old.roomMode!=='manual'?'active':''}">Автоподбор</button><button type="button" data-room-value="__none" class="${old.roomMode==='manual'&&!old.roomId?'active':''}">Нет</button>${studioRoomChoices(old).map(({room,free})=>`<button type="button" data-room-value="${h(room.id)}" class="${old.roomId===room.id?'active ':''}${free?'room-free':'room-busy'}" title="${free?'Свободен':'Занят в это время'}">${h(PrintTools.roomNumber(room.name)||room.name)}</button>`).join('')}</div><button type="button" data-room-cancel>Отменить</button>`;document.body.append(menu);
- const rect=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();menu.style.left=Math.max(6,Math.min(rect.left,innerWidth-box.width-6))+'px';menu.style.top=Math.max(6,Math.min(rect.bottom+3,innerHeight-box.height-6))+'px';menu.querySelectorAll('[data-room-value]').forEach(b=>b.onclick=()=>{const value=b.dataset.roomValue,automatic=value==='__auto',roomId=automatic||value==='__none'?null:value;menu.remove();studioApply('Изменение кабинета',[{id:old.id,before:old,after:{...old,roomId,roomMode:automatic?'auto':'manual'}}])});menu.querySelector('[data-room-cancel]').onclick=()=>menu.remove();menu.querySelector('[data-room-value]')?.focus();
+ document.querySelector('#studio-room-menu')?.remove();
+ const old=studioRows.find(l=>l.id===id);if(!old)return;
+ const menu=document.createElement('div');menu.id='studio-room-menu';
+ menu.innerHTML=`<strong>${h(studioSubject(old))} · ${h(lookup('classes',old.classId)?.name)}</strong>${studioRoomScope(old)}<div class="studio-room-options"></div><button type="button" data-room-cancel>Отменить</button>`;
+ document.body.append(menu);
+ const scope=menu.querySelector('#studio-room-day'),choices=menu.querySelector('.studio-room-options');
+ const update=()=>{
+  choices.innerHTML=`<button type="button" data-room-value="__auto" class="${old.roomMode!=='manual'?'active':''}">Автоподбор</button><button type="button" data-room-value="__none" class="${old.roomMode==='manual'&&!old.roomId?'active':''}">Нет</button>${studioRoomChoices(studioRoomLessons(old,scope?.checked)).map(({room,free})=>`<button type="button" data-room-value="${h(room.id)}" class="${old.roomId===room.id?'active ':''}${free?'room-free':'room-busy'}" title="${free?'Свободен':'Занят в это время'}">${h(PrintTools.roomNumber(room.name)||room.name)}</button>`).join('')}`;
+ };
+ if(scope)scope.onchange=update;
+ update();
+ const rect=anchor.getBoundingClientRect(),box=menu.getBoundingClientRect();
+ menu.style.left=Math.max(6,Math.min(rect.left,innerWidth-box.width-6))+'px';
+ menu.style.top=Math.max(6,Math.min(rect.bottom+3,innerHeight-box.height-6))+'px';
+ choices.onclick=e=>{const b=e.target.closest('[data-room-value]');if(b){menu.remove();studioSaveRoom(old,b.dataset.roomValue,scope?.checked)}};
+ menu.querySelector('[data-room-cancel]').onclick=()=>menu.remove();
+ menu.querySelector('[data-room-value]')?.focus();
 }
 function studioFit(){
  const workspace=$('#studio-workspace');if(!workspace)return;
@@ -360,12 +448,15 @@ const studioOldLesson=showLesson;
 showLesson=function(id,initial){
  if(route!=='schedule'){studioOldLesson(id,initial);return}
  const old=id?studioRows.find(l=>l.id===id):{id:'studio-'+crypto.randomUUID(),teacherId:null,roomId:null,subjectId:db.subjects[0]?.id,...initial};if(!old)return;
+ const roomSelection=old.roomMode==='manual'?old.roomId||'__none':'__auto';
+ const roomChoices=[{id:'__auto',name:old.roomMode==='auto'&&old.roomId?'Автоматически · '+roomName(old.roomId):'Автоматически'},{id:'__none',name:'Нет'},...db.rooms];
  const groups=db.groups.filter(g=>g.classId===old.classId);const originalGroup=old.groupId||groups.find(g=>g.name===old.groupName)?.id||'';
- dialog(id?'Редактировать урок':'Добавить урок',`<p>${h(lookup('classes',old.classId)?.name)} · ${studioPeriod==='base'?'основное расписание':'выбранная неделя'}</p><div class="form-grid"><label>Предмет<select id="studio-edit-subject">${options(db.subjects,old.subjectId)}</select></label><label>Учитель<select id="studio-edit-teacher">${options(db.teachers,old.teacherId,'Не назначен')}</select></label><label>Кабинет<select id="studio-edit-room">${options(db.rooms,old.roomId,'Автоматически')}</select></label><label>Подгруппа<select id="studio-edit-group">${options(groups,originalGroup,'Весь класс')}</select></label><label>День<select id="studio-edit-day">${studioDates.map(d=>`<option value="${d}" ${d===old.date?'selected':''}>${days[SM.day(d)]}${studioPeriod==='weeks'?' '+fmt(d):''}</option>`).join('')}</select></label><label>Номер урока<input id="studio-edit-slot" type="number" min="1" max="20" value="${old.slot}"></label><label>Время (чч:мм - чч:мм)<input id="studio-edit-time" value="${h(old.time||E.slotInfo(db,old.classId,old.date,old.slot).time||'')}" placeholder="08:30 - 09:15"></label><label class="checkbox-line"><input id="studio-edit-lock" type="checkbox" ${old.locked?'checked':''}>Закрепить урок</label></div><p id="studio-edit-error" role="alert" class="error"></p>`,[{text:'Отмена',action:()=>$('#dialog').close()},...(id?[{text:'В резерв',action:()=>studioApply('Убрать в резерв',[{id:old.id,before:old,after:{...old,parked:true,parkingArea:'bottom'}}])}]:[]),{text:'Сохранить',class:'primary',action:()=>{
+ dialog(id?'Редактировать урок':'Добавить урок',`<p>${h(lookup('classes',old.classId)?.name)} · ${studioPeriod==='base'?'основное расписание':'выбранная неделя'}</p><div class="form-grid"><label>Предмет<select id="studio-edit-subject">${options(db.subjects,old.subjectId)}</select></label><label>Учитель<select id="studio-edit-teacher">${options(db.teachers,old.teacherId,'Не назначен')}</select></label><label>Кабинет<select id="studio-edit-room">${options(roomChoices,roomSelection)}</select></label><label>Подгруппа<select id="studio-edit-group">${options(groups,originalGroup,'Весь класс')}</select></label><label>День<select id="studio-edit-day">${studioDates.map(d=>`<option value="${d}" ${d===old.date?'selected':''}>${days[SM.day(d)]}${studioPeriod==='weeks'?' '+fmt(d):''}</option>`).join('')}</select></label><label>Номер урока<input id="studio-edit-slot" type="number" min="1" max="20" value="${old.slot}"></label><label>Время (чч:мм - чч:мм)<input id="studio-edit-time" value="${h(old.time||E.slotInfo(db,old.classId,old.date,old.slot).time||'')}" placeholder="08:30 - 09:15"></label><label class="checkbox-line"><input id="studio-edit-lock" type="checkbox" ${old.locked?'checked':''}>Закрепить урок</label></div><p id="studio-edit-error" role="alert" class="error"></p>`,[{text:'Отмена',action:()=>$('#dialog').close()},...(id?[{text:'В резерв',action:()=>studioApply('Убрать в резерв',[{id:old.id,before:old,after:{...old,parked:true,parkingArea:'bottom'}}])}]:[]),{text:'Сохранить',class:'primary',action:()=>{
   const slot=+$('#studio-edit-slot').value,d=$('#studio-edit-day').value;if(!Number.isInteger(slot)||slot<1||slot>20){$('#studio-edit-error').textContent='Номер урока от 1 до 20';return}
   const group=db.groups.find(g=>g.id===$('#studio-edit-group').value);
   const clock=$('#studio-edit-time').value.trim();if(clock&&!/^([01]\d|2[0-3]):[0-5]\d\s*[-–]\s*([01]\d|2[0-3]):[0-5]\d$/.test(clock)){$('#studio-edit-error').textContent='Время: чч:мм - чч:мм';return}
-  const after={...old,subjectId:$('#studio-edit-subject').value,teacherId:$('#studio-edit-teacher').value||null,roomId:$('#studio-edit-room').value||null,roomMode:$('#studio-edit-room').value?'manual':'auto',groupId:group?.id||null,groupName:group?.name||null,profileAudience:group?.id===originalGroup?old.profileAudience:null,date:d,slot,locked:$('#studio-edit-lock').checked,...E.slotInfo(db,old.classId,d,slot),time:$('#studio-edit-time').value.trim()};
+  const roomValue=$('#studio-edit-room').value,automatic=roomValue==='__auto';
+  const after={...old,subjectId:$('#studio-edit-subject').value,teacherId:$('#studio-edit-teacher').value||null,roomId:automatic?old.roomId||null:roomValue==='__none'?null:roomValue,roomMode:automatic?'auto':'manual',roomHint:roomValue===roomSelection?old.roomHint:null,groupId:group?.id||null,groupName:group?.name||null,profileAudience:group?.id===originalGroup?old.profileAudience:null,date:d,slot,locked:$('#studio-edit-lock').checked,...E.slotInfo(db,old.classId,d,slot),time:$('#studio-edit-time').value.trim()};
   studioConfirm('Редактирование урока',[{id:old.id,before:old,after}]);
  }}]);
 };

@@ -50,17 +50,30 @@
   return true;
  }
  const cache=new WeakMap();
+ const roomRule=(policy,l)=>policy.teacherRules?.[l.teacherId]||{
+  mode:'preferred',rooms:policy.teacherRooms?.[l.teacherId]?[policy.teacherRooms[l.teacherId]]:[],forbidden:[]
+ };
+ function roomSignature(policy,l){
+  const {mode,rooms,forbidden}=roomRule(policy,l);
+  return JSON.stringify([l.teacherId,l.classId,mode,rooms||[],forbidden||[],policy.classRooms?.[l.classId]||[]]);
+ }
+ function roomHint(policy,l){
+  return policy?.enabled&&l.roomMode==='auto'&&l.roomId?[l.roomId,roomSignature(policy,l)]:null;
+ }
  function resolve(db,raw){
   const policy=db.preferences?.roomPolicy;
   if(!policy?.enabled)return raw;
   const key=JSON.stringify([db.overrides,db.extraLessons,db.absences,db.preferences?.studioSuspensions,db.baseSchedule,(db.courses||[]).filter(c=>c.studioEdited),policy]);
   const cached=cache.get(db);
   if(cached?.key===key&&cached.lessons===db.lessons&&cached.rooms===db.rooms)return cached.rows.map(l=>({...l}));
-  const roomIds=new Set(db.rooms.map(r=>r.id)),pool=(policy.pool||[]).filter(r=>roomIds.has(r)),home=policy.teacherRooms||{};
-  const rule=l=>policy.teacherRules?.[l.teacherId]||{mode:'preferred',rooms:home[l.teacherId]?[home[l.teacherId]]:[],forbidden:[]};
+  const roomIds=new Set(db.rooms.map(r=>r.id)),pool=(policy.pool||[]).filter(r=>roomIds.has(r)),poolIds=new Set(pool);
+  const rule=l=>roomRule(policy,l);
   const preferred=l=>[...new Set([...(rule(l).rooms||[]),...(policy.classRooms?.[l.classId]||[])])].filter(r=>roomIds.has(r));
   const allowed=(r,l)=>roomIds.has(r)&&!(rule(l).forbidden||[]).includes(r);
-  const manual=l=>l.roomMode==='manual'||(l.roomMode!=='auto'&&Object.hasOwn(db.overrides?.[l.id]||{},'roomId'));
+  const manual=l=>{
+   const override=db.overrides?.[l.id];
+   return l.roomMode==='manual'||(override?.roomMode!=='auto'&&Object.hasOwn(override||{},'roomId'));
+  };
   const rows=raw.map(l=>({...l,roomMode:manual(l)?'manual':'auto'}));
   const byDay=new Map();
   for(const l of rows){if(!byDay.has(l.date))byDay.set(l.date,[]);byDay.get(l.date).push(l)}
@@ -70,8 +83,14 @@
    const reserve=l=>{if(!l.cancelled&&!l.parked&&!l.suspended&&l.roomId){if(!occupied.has(l.roomId))occupied.set(l.roomId,[]);occupied.get(l.roomId).push(l);if(l.teacherId){if(!teacherDayRooms.has(l.teacherId))teacherDayRooms.set(l.teacherId,[]);teacherDayRooms.get(l.teacherId).push({slot:l.slot,roomId:l.roomId})}}};
    const free=(r,l)=>!(occupied.get(r)||[]).some(x=>root.ScheduleEngine.overlap(x,l));
    for(const l of lessons.filter(x=>x.roomMode==='manual'))reserve(l);
-   const automatic=lessons.filter(x=>x.roomMode==='auto').sort((a,b)=>Number(rule(b).mode==='fixed')-Number(rule(a).mode==='fixed')||Number(!preferred(a).length)-Number(!preferred(b).length)||a.slot-b.slot||String(a.id).localeCompare(String(b.id),'en',{numeric:true}));
-   // Reserve home rooms before assigning fallback rooms, including overlapping bell schedules.
+   const retained=new Map(lessons.flatMap(l=>{
+    const [r,signature]=Array.isArray(l.roomHint)?l.roomHint:[];
+    return r&&allowed(r,l)&&(poolIds.has(r)||preferred(l).includes(r))&&signature===roomSignature(policy,l)?[[l.id,r]]:[];
+   }));
+   // Give an existing strict booking priority over a newly moved strict booking.
+   const fixedPriority=l=>rule(l).mode==='fixed'?(retained.has(l.id)?2:1):0;
+   const automatic=lessons.filter(x=>x.roomMode==='auto').sort((a,b)=>fixedPriority(b)-fixedPriority(a)||
+    Number(!preferred(a).length)-Number(!preferred(b).length)||a.slot-b.slot||String(a.id).localeCompare(String(b.id),'en',{numeric:true}));
    const fallback=[];
    for(const l of automatic){
     const first=preferred(l)[0];
@@ -84,17 +103,27 @@
      if(l.roomId)reserve(l);
     }else fallback.push(l);
    }
+   const assign=(l,r)=>{
+    l.roomId=r;
+    const tr=rule(l).rooms||[],cr=policy.classRooms?.[l.classId]||[];
+    l.roomReason=tr.includes(r)?'Предпочтение учителя №'+(tr.indexOf(r)+1):cr.includes(r)?'Предпочтение класса №'+(cr.indexOf(r)+1):'Выбран свободный кабинет';
+    reserve(l);
+   };
    for(const l of fallback){
+    const r=retained.get(l.id);
+    if(r&&free(r,l))assign(l,r);
+   }
+   for(const l of fallback.filter(l=>!l.roomId)){
     const teacherPreferred=rule(l).rooms||[],classPreferred=policy.classRooms?.[l.classId]||[],near=(teacherDayRooms.get(l.teacherId)||[]).sort((a,b)=>Math.abs(a.slot-l.slot)-Math.abs(b.slot-l.slot))[0]?.roomId;
     const choices=[...new Set([...teacherPreferred,...classPreferred,...pool])].filter(r=>allowed(r,l)&&free(r,l));
     const score=r=>(r===near?-10000:0)+(teacherPreferred.includes(r)?teacherPreferred.indexOf(r)*10:classPreferred.includes(r)?200+classPreferred.indexOf(r)*10:1000);
-    l.roomId=choices.sort((a,b)=>score(a)-score(b))[0]||null;
-    if(l.roomId){const tr=rule(l).rooms||[],cr=policy.classRooms?.[l.classId]||[];l.roomReason=tr.includes(l.roomId)?'Предпочтение учителя №'+(tr.indexOf(l.roomId)+1):cr.includes(l.roomId)?'Предпочтение класса №'+(cr.indexOf(l.roomId)+1):'Выбран свободный кабинет';reserve(l)}
+    const room=choices.sort((a,b)=>score(a)-score(b))[0];
+    if(room)assign(l,room);
    }
   }
   cache.set(db,{key,lessons:db.lessons,rooms:db.rooms,rows});
   return rows.map(l=>({...l}));
  }
- const api={assignments,number,install,resolve};root.RoomAllocator=api;
+ const api={assignments,number,install,resolve,roomHint};root.RoomAllocator=api;
  if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

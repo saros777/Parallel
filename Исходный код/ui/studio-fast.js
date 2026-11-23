@@ -30,7 +30,7 @@ function studioUpdateExisting(paint){
  $('#studio-undo').disabled=!db.history.length;$('#studio-redo').disabled=!studioRedo.length;
  if($('#date'))$('#date').value=date;
  studioBindTrayFilters();
- bindCards();studioBindFreeRooms();studioFit();return true;
+ bindCards();studioFit();return true;
 }
 const studioTakeIndexed=studioTake;
 studioTake=function(id){
