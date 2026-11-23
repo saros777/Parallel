@@ -28,6 +28,27 @@
   const resolved=E.resolvePatches(local,patches);
   return {patches:resolved,issues:E.newIssues(local,resolved)};
  }
+ function transferRooms(db,rows,patches){
+  const edited=new Set(patches.map(p=>p.id)),bookings=[],displaced=new Map(),cleared=[];
+  const sameRoom=(a,b)=>a.roomId===b.roomId&&E.pairIssues(a,b,db).includes('Кабинет занят одновременно');
+  const withoutRoom=l=>({...l,roomId:null,roomMode:'manual',roomHint:null});
+  const assignments=patches.map(p=>{
+   const lesson=p.after;
+   if(lesson.roomMode!=='manual'||!lesson.roomId||!active(lesson))return p;
+   if(bookings.some(other=>sameRoom(lesson,other))){
+    cleared.push(lesson);
+    return {...p,after:withoutRoom(lesson)};
+   }
+   bookings.push(lesson);
+   for(const other of rows){
+    if(edited.has(other.id)||displaced.has(other.id)||!sameRoom(lesson,other))continue;
+    displaced.set(other.id,{id:other.id,before:other,after:withoutRoom(other)});
+    cleared.push(other);
+   }
+   return p;
+  });
+  return {patches:[...assignments,...displaced.values()],cleared};
+ }
  function park(db,id,block=false){
   const rows=E.effective(db),old=rows.find(l=>l.id===id);
   if(!old||old.cancelled)throw Error('Урок не найден');
@@ -46,6 +67,6 @@
  }
  const colorCache=new WeakMap();
  function teacherColor(id,db){if(!id)return '#e3e6eb';let colors=colorCache.get(db.teachers);if(!colors||colors.size!==db.teachers.length){colors=new Map(db.teachers.map(t=>t.id).sort().map((id,i)=>[id,`hsl(${Math.round((i*137.508)%360)} 62% 79%)`]));colorCache.set(db.teachers,colors)}return colors.get(id)||'hsl(0 62% 79%)'}
- const api={active,slice,plan,assess,park,assignment,teacherColor};
+ const api={active,slice,plan,assess,transferRooms,park,assignment,teacherColor};
  root.WorkbenchEngine=api;if(typeof module!=='undefined')module.exports=api;
 })(globalThis);

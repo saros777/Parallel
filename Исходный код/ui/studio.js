@@ -105,13 +105,13 @@ function studioApply(label,patches,forced=false,carryId=null){
  // transaction, then immediately continues with the displaced card.
  if(carryId&&studioRows.some(l=>l.id===carryId&&!l.cancelled))studioTake(carryId);
 }
-function studioCheck(raw){
+function studioCheck(raw,edits=raw){
  const patches=raw.map(p=>{
   const retain=p.after.roomMode==='auto'&&studioRoomPosition(p.before)===studioRoomPosition(p.after)&&p.after.roomHint!==null;
   return {...p,after:{...p.after,roomHint:retain?RoomAllocator.roomHint(settings.roomPolicy,p.before):null}};
  });
  const result=W.assess(studioWork,patches);
- const restrictions=raw.flatMap(p=>[...SM.restrictions(p.after,db),...(E.absenceFor(p.after,studioWork)?['Учитель отмечен отсутствующим']:[])].map(kind=>({kind,lessonIds:[p.id]})));
+ const restrictions=edits.flatMap(p=>[...SM.restrictions(p.after,db),...(E.absenceFor(p.after,studioWork)?['Учитель отмечен отсутствующим']:[])].map(kind=>({kind,lessonIds:[p.id]})));
  return {patches:result.patches,issues:[...result.issues,...restrictions]};
 }
 function studioClosePopup(){document.querySelector('#studio-popover')?.remove()}
@@ -124,13 +124,16 @@ function studioPopup(title,body,actions){
  const r=panel.getBoundingClientRect();panel.style.left=Math.max(6,Math.min(studioPointer.x+12,innerWidth-r.width-6))+'px';panel.style.top=Math.max(6,Math.min(studioPointer.y+12,innerHeight-r.height-6))+'px';
  panel.querySelector('[data-pop-action]')?.focus({preventScroll:true});
 }
-function studioConfirm(label,raw,carryId=null,roomOnly=false){
- const r=studioCheck(raw),issues=r.issues.filter(x=>!x.lessonIds?.includes(carryId)&&(!roomOnly||x.kind==='Кабинет занят одновременно'||x.kind==='Нет свободного кабинета')),notes=[...new Set(issues.map(x=>x.kind))];
+function studioConfirm(label,raw,carryId=null,{roomOnly=false,transferRoom=false}={}){
+ const {patches,cleared}=transferRoom?W.transferRooms(studioWork,studioRows,raw):{patches:raw,cleared:[]};
+ const r=studioCheck(patches,raw),issues=r.issues.filter(x=>!x.lessonIds?.includes(carryId)&&(!roomOnly||x.kind==='Кабинет занят одновременно'||x.kind==='Нет свободного кабинета'));
+ const notes=[...new Set([...issues.map(x=>x.kind),...(cleared.length?['Кабинет занят одновременно']:[])])];
  if(!notes.length){studioApply(label,r.patches,false,carryId);return}
  const moving=new Set(raw.map(p=>p.id));
  const otherIds=new Set(issues.flatMap(i=>i.lessonIds||[]).filter(id=>!moving.has(id)));
- const occupied=[...otherIds].map(id=>studioRows.find(l=>l.id===id)).filter(Boolean);
- studioPopup('Конфликт',`<ul>${notes.map(n=>`<li>${h(n)}</li>`).join('')}</ul>${occupied.length?`<small>${occupied.slice(0,3).map(l=>h(lookup('classes',l.classId)?.name+' · '+studioSubject(l)+' · '+days[SM.day(l.date)]+' '+l.slot)).join('<br>')}</small>`:''}`,[{text:'Не размещать',action:studioClosePopup},{text:'Игнорировать конфликт и разместить',class:'primary',action:()=>studioApply(label,r.patches,true,carryId)}]);
+ const occupied=[...new Map([...cleared,...studioRows.filter(l=>otherIds.has(l.id))].map(l=>[l.id,l])).values()];
+ const action=cleared.length?(issues.length?'Сохранить с переназначением':'Переназначить кабинет'):'Игнорировать конфликт и разместить';
+ studioPopup('Конфликт',`<ul>${notes.map(n=>`<li>${h(n)}</li>`).join('')}</ul>${cleared.length?`<p>При подтверждении кабинет будет снят с предыдущих уроков (${cleared.length}).</p>`:''}${occupied.length?`<small>${occupied.slice(0,3).map(l=>h(lookup('classes',l.classId)?.name+' · '+studioSubject(l)+' · '+days[SM.day(l.date)]+' '+l.slot)).join('<br>')}</small>`:''}`,[{text:'Не размещать',action:studioClosePopup},{text:action,class:'primary',action:()=>studioApply(label,r.patches,issues.length>0,carryId)}]);
 }
 function studioTime(classId,d,slot){const l=studioRows.find(l=>l.classId===classId&&l.date===d&&l.slot===slot&&l.time)||db.lessons.find(l=>l.classId===classId&&l.slot===slot&&l.time);return {time:l?.time||'',callId:l?.callId||null}}
 function studioPlacement(td,targetId=null){
@@ -369,16 +372,16 @@ function studioRoomScope(old){
 }
 function studioRoomLessons(old,wholeDay){
  if(!wholeDay)return [old];
- return studioRows.filter(l=>l.id===old.id||l.date===old.date&&l.teacherId===old.teacherId&&W.active(l));
+ return [old,...studioRows.filter(l=>l.id!==old.id&&l.date===old.date&&l.teacherId===old.teacherId&&W.active(l))];
 }
 function studioSaveRoom(old,value,wholeDay){
  const roomMode=value==='__auto'?'auto':'manual',roomId=value==='__auto'||value==='__none'?null:value;
  const patches=studioRoomLessons(old,wholeDay).map(l=>({id:l.id,before:l,after:{...l,roomId,roomMode,roomHint:null}}));
- studioConfirm(wholeDay?'Кабинет учителя на день':'Изменение кабинета',patches,null,true);
+ studioConfirm(wholeDay?'Кабинет учителя на день':'Изменение кабинета',patches,null,{roomOnly:true,transferRoom:true});
 }
 function studioRoomChoices(lessons){
  const editing=new Set(lessons.map(l=>l.id));
- const occupied=new Set(studioRows.filter(x=>x.roomId&&!editing.has(x.id)&&lessons.some(l=>E.overlap(l,x))).map(x=>x.roomId));
+ const occupied=new Set(studioRows.filter(x=>x.roomId&&!editing.has(x.id)&&lessons.some(l=>E.pairIssues({...l,roomId:x.roomId},x,db).includes('Кабинет занят одновременно'))).map(x=>x.roomId));
  const rooms=[...db.rooms].sort((a,b)=>(PrintTools.roomNumber(a.name)||a.name).localeCompare(PrintTools.roomNumber(b.name)||b.name,'ru',{numeric:true,sensitivity:'base'}));
  return rooms.map(room=>({room,free:!occupied.has(room.id)}));
 }
@@ -453,7 +456,9 @@ showLesson=function(id,initial){
   const clock=$('#studio-edit-time').value.trim();if(clock&&!/^([01]\d|2[0-3]):[0-5]\d\s*[-–]\s*([01]\d|2[0-3]):[0-5]\d$/.test(clock)){$('#studio-edit-error').textContent='Время: чч:мм - чч:мм';return}
   const roomValue=$('#studio-edit-room').value,automatic=roomValue==='__auto';
   const after={...old,subjectId:$('#studio-edit-subject').value,teacherId:$('#studio-edit-teacher').value||null,roomId:automatic?old.roomId||null:roomValue==='__none'?null:roomValue,roomMode:automatic?'auto':'manual',roomHint:roomValue===roomSelection?old.roomHint:null,groupId:group?.id||null,groupName:group?.name||null,profileAudience:group?.id===originalGroup?old.profileAudience:null,date:d,slot,locked:$('#studio-edit-lock').checked,...E.slotInfo(db,old.classId,d,slot),time:$('#studio-edit-time').value.trim()};
-  studioConfirm('Редактирование урока',[{id:old.id,before:old,after}]);
+  studioConfirm('Редактирование урока',[{id:old.id,before:old,after}],null,{
+   transferRoom:!automatic&&(roomValue!==roomSelection||studioRoomPosition(old)!==studioRoomPosition(after))
+  });
  }}]);
 };
 const studioAbsenceBefore=showAbsence;

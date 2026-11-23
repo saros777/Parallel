@@ -97,18 +97,22 @@ function Run-NativeWindow([switch]$Association, [switch]$Warm, [string]$Executab
         if ($app.ExitCode -ne 0) { throw "Native application failed at close: $($app.ExitCode)" }
     } finally { if (-not $app.HasExited) { $app.Kill() } }
 }
-function Test-PortableArchive([switch]$Scan) {
+function Test-PortableArchive([switch]$Scan, [switch]$Arm64) {
     $portable = Join-Path $root 'dist\portable'
-    $exe = Join-Path $portable 'Parallel.exe'
-    $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($exe))
-    try {
-        $reader.BaseStream.Position = 0x3c
-        $reader.BaseStream.Position = $reader.ReadInt32()
-        if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne 0x14c) {
-            throw 'Portable EXE must be a 32-bit x86 Windows executable'
-        }
-    } finally { $reader.Dispose() }
-    $paths = @($exe, (Join-Path $portable 'MicrosoftEdgeWebview2Setup.exe'), (Join-Path $root 'build\windows\README-app.txt'))
+    $portableExecutables = if ($Arm64) { @{'Parallel-Arm64.exe'=0xaa64} } else { @{'Parallel.exe'=0x14c; 'Parallel-Arm64.exe'=0xaa64} }
+    $paths = @((Join-Path $portable 'MicrosoftEdgeWebview2Setup.exe'), (Join-Path $root 'build\windows\README-app.txt'))
+    foreach ($name in $portableExecutables.Keys) {
+        $exe = Join-Path $portable $name
+        $reader = [IO.BinaryReader]::new([IO.File]::OpenRead($exe))
+        try {
+            $reader.BaseStream.Position = 0x3c
+            $reader.BaseStream.Position = $reader.ReadInt32()
+            if ($reader.ReadUInt32() -ne 0x4550 -or $reader.ReadUInt16() -ne $portableExecutables[$name]) {
+                throw "Portable EXE has the wrong architecture: $name"
+            }
+        } finally { $reader.Dispose() }
+        $paths += $exe
+    }
     $appZip = Join-Path $root 'dist\Parallel-5.4.20-Portable.zip'
     Compress-Archive -LiteralPath $paths -DestinationPath $appZip -Force
     if ($Scan) {
@@ -124,13 +128,14 @@ function Test-PortableArchive([switch]$Scan) {
         }
     }
     if ($Scan) {
-        foreach ($name in @('Parallel.exe','MicrosoftEdgeWebview2Setup.exe')) {
+        foreach ($name in @('Parallel.exe','Parallel-Arm64.exe','MicrosoftEdgeWebview2Setup.exe')) {
             Set-Content -LiteralPath (Join-Path $unpacked $name) -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
         }
         Scan-Path $unpacked
         $report.checks.applicationZipDefenderScan = 'passed; portable archive and extracted executables'
     }
-    Run-NativeWindow -Warm -Executable (Join-Path $unpacked 'Parallel.exe') -RunLabel 'withoutInstallationLaunch'
+    $executable = if ($Arm64) { 'Parallel-Arm64.exe' } else { 'Parallel.exe' }
+    Run-NativeWindow -Warm -Executable (Join-Path $unpacked $executable) -RunLabel 'withoutInstallationLaunch'
 }
 try {
     if (Test-Path $data) { throw 'Dedicated clean Windows test machine required: default data folder already exists' }
@@ -139,7 +144,7 @@ try {
             throw 'Portable Arm smoke test requires Windows on Arm'
         }
         Write-Fixture
-        Test-PortableArchive
+        Test-PortableArchive -Arm64
         return
     }
     $status = Get-MpComputerStatus
@@ -189,10 +194,10 @@ try {
     if ((Get-FileHash -LiteralPath $project).Hash -ne $projectHash) { throw 'Uninstall removed or changed the schedule document' }
     $report.checks.msiUninstallPreservesWorkspace = 'passed'
     if ($env:PARALLEL_PORTABLE_ARM_SHA256) {
-        if ((Get-FileHash (Join-Path $root 'dist\portable\Parallel.exe')).Hash -ne $env:PARALLEL_PORTABLE_ARM_SHA256) {
-            throw 'Portable EXE differs from the one tested on Windows 11 Arm'
+        if ((Get-FileHash (Join-Path $root 'dist\portable\Parallel-Arm64.exe')).Hash -ne $env:PARALLEL_PORTABLE_ARM_SHA256) {
+            throw 'Portable ARM64 EXE differs from the one tested on Windows 11 Arm'
         }
-        $report.checks.portableWindows11Arm64 = 'passed; same x86 executable launched, rendered and closed under Windows 11 Arm'
+        $report.checks.portableWindows11Arm64 = 'passed; same native ARM64 executable launched, rendered and closed under Windows 11 Arm'
     }
     if ($report.checks.withoutInstallationLaunch.elapsedMs -gt 8000) { throw 'Extracted EXE startup exceeded 8 seconds' }
     $report.startupBudgetsMs = @{firstWebViewProfile=20000;regularLaunch=5000;fileAssociation=8000}

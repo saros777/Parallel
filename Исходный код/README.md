@@ -20,7 +20,8 @@
 
 ## Изменения 5.4.20
 
-- Один ZIP для Windows 10/11 на x64 и Arm64, а также 32-разрядной Windows 10. Распакуйте ZIP и запустите `Parallel.exe`. Windows Installer для этого способа не нужен.
+- Один ZIP для Windows 10/11 на x64 и Arm64, а также 32-разрядной Windows 10. После распаковки запустите `Parallel.exe` или `Parallel-Arm64.exe` на Windows Arm64.
+- При назначении занятого кабинета появляется предупреждение. После подтверждения кабинет получает выбранный урок, а у предыдущего урока номер очищается. Совместные занятия подгрупп по-прежнему могут проходить в одном кабинете.
 
 ## Исправления 5.4.19
 
@@ -129,7 +130,7 @@
 - Старый `project-session.json` читается при миграции. Новая версия хранит сведения о документе в поле `project` рядом с `state` внутри рабочей копии; именованный `.parallel` по-прежнему содержит только расписание.
 - Исправлены номера версий, сообщение сборки, обработка старой блокировки. В нативном HTML применяется CSP.
 
-Распакуйте `Parallel-5.4.20-Portable.zip` через «Извлечь всё» и запустите `Parallel.exe` из распакованной папки. Это 32-разрядная сборка x86. На Windows x64 и Arm64 она использует встроенную совместимость Windows. Данные сохраняются в прежней папке пользователя. MSI для Windows x64 обеспечивает установку, обновление, ярлыки и ассоциацию `.parallel`.
+Распакуйте `Parallel-5.4.20-Portable.zip` через «Извлечь всё». На Windows x64 и 32-разрядной Windows откройте `Parallel.exe`. На Windows Arm64 откройте `Parallel-Arm64.exe`. Данные сохраняются в прежней папке пользователя. MSI для Windows x64 обеспечивает установку, обновление, ярлыки и ассоциацию `.parallel`.
 
 ## Установка
 
@@ -166,9 +167,9 @@ MSI устанавливает программу в `%LOCALAPPDATA%\Programs\Pa
 powershell.exe -NoProfile -File build/windows/build.ps1
 ```
 
-Результат: `dist/Parallel.exe`, официальный `dist/MicrosoftEdgeWebview2Setup.exe` и `dist/Parallel-5.4.20-x64.msi`. Вызов `build/windows/build.ps1 -PortableOnly` собирает x86-приложение и кладёт его рядом с WebView2 в `dist/portable`. Конвейер упаковывает их с инструкцией в ZIP. При первой подготовке WiX нужен доступ к NuGet. Во время установленного приложения .NET, Go, Node.js и WiX не нужны.
+Результат: `dist/Parallel.exe`, официальный `dist/MicrosoftEdgeWebview2Setup.exe` и `dist/Parallel-5.4.20-x64.msi`. Вызов `build/windows/build.ps1 -PortableOnly` собирает x86-приложение в `dist/portable`. Добавьте `-PortableArch arm64` для сборки `Parallel-Arm64.exe`. Конвейер упаковывает оба EXE, WebView2 и инструкцию в ZIP. При первой подготовке WiX нужен доступ к NuGet. Во время установленного приложения .NET, Go, Node.js и WiX не нужны.
 
-Перекрёстная сборка EXE на Linux: `bash build/windows/build.sh`. MSI собирается на Windows. Ресурсы `resource_windows_amd64.syso` и `resource_windows_386.syso` уже включены. Для пересоздания значка и манифеста используйте `github.com/akavel/rsrc@v0.10.2` с архитектурой `amd64` или `386`. Для x86 в копии манифеста задайте `processorArchitecture="x86"`.
+Перекрёстная сборка EXE на Linux: `bash build/windows/build.sh`. MSI собирается на Windows. Ресурсы значка и манифеста для `amd64`, `386` и `arm64` включены. Для их пересоздания используйте `github.com/akavel/rsrc@v0.10.2` с нужной архитектурой. Для x86 и Arm64 в копии манифеста задайте `processorArchitecture="x86"` или `processorArchitecture="arm64"`.
 
 ## Проверки
 

@@ -1,15 +1,16 @@
-param([switch]$ExecutableOnly, [switch]$PortableOnly)
+param([switch]$ExecutableOnly, [switch]$PortableOnly, [ValidateSet('386','arm64')][string]$PortableArch = '386')
 $ErrorActionPreference = 'Stop'
 $root = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
 Push-Location $root
 try {
     $destination = if ($PortableOnly) { 'dist/portable' } else { 'dist' }
+    $executable = if ($PortableOnly -and $PortableArch -eq 'arm64') { 'Parallel-Arm64.exe' } else { 'Parallel.exe' }
     New-Item -ItemType Directory -Force $destination | Out-Null
     $env:CGO_ENABLED = '0'
     $env:GOOS = 'windows'
-    $env:GOARCH = if ($PortableOnly) { '386' } else { 'amd64' }
+    $env:GOARCH = if ($PortableOnly) { $PortableArch } else { 'amd64' }
     # Record provenance separately so checkout paths/state cannot change EXE bytes.
-    go build -mod=vendor -buildvcs=false -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o "$destination/Parallel.exe" .
+    go build -mod=vendor -buildvcs=false -trimpath -tags 'desktop,production,wv2runtime.error' -ldflags '-s -w -H=windowsgui' -o "$destination/$executable" .
     if ($LASTEXITCODE -ne 0) { throw 'Go build failed' }
     $bootstrap = Join-Path $root 'vendor\github.com\wailsapp\wails\v2\internal\webview2runtime\MicrosoftEdgeWebview2Setup.exe'
     $signature = Get-AuthenticodeSignature -LiteralPath $bootstrap

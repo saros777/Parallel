@@ -23,17 +23,30 @@ jobs:
         with:
           go-version: '1.26.10'
           cache: false
-      - name: Build and run the portable x86 app on Windows 11 Arm
+      - name: Build and run the native portable app on Windows 11 Arm
         id: portable
         shell: pwsh
         working-directory: Исходный код
         run: |
           $ErrorActionPreference = 'Stop'
-          ./build/windows/build.ps1 -PortableOnly
+          ./build/windows/build.ps1 -PortableOnly -PortableArch arm64
           go test -mod=vendor -run '^TestWebViewBootstrap' .
           if ($LASTEXITCODE -ne 0) { throw 'Portable WebView2 bootstrapper tests failed' }
-          ./qa/windows-install.ps1 -PortableOnly
-          "sha256=$((Get-FileHash -LiteralPath 'dist/portable/Parallel.exe').Hash)" >> $env:GITHUB_OUTPUT
+          $key = 'Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+          $versions = @("HKLM:\SOFTWARE\WOW6432Node\$key", "HKCU:\Software\$key" | ForEach-Object {
+            Get-ItemPropertyValue -LiteralPath $_ -Name pv -ErrorAction SilentlyContinue
+          } | Where-Object { $_ -and $_ -ne '0.0.0.0' })
+          if (-not $versions.Count) {
+            $setup = Start-Process (Resolve-Path 'dist/portable/MicrosoftEdgeWebview2Setup.exe') -ArgumentList '/silent','/install' -Wait -PassThru
+            if ($setup.ExitCode -ne 0) { throw "Microsoft WebView2 installation failed: $($setup.ExitCode)" }
+          }
+          try { ./qa/windows-install.ps1 -PortableOnly }
+          catch {
+            $logPath = Join-Path $env:LOCALAPPDATA 'ParallelSchool/application.log'
+            if (Test-Path $logPath) { Get-Content $logPath -Tail 20 | Write-Output }
+            throw
+          }
+          "sha256=$((Get-FileHash -LiteralPath 'dist/portable/Parallel-Arm64.exe').Hash)" >> $env:GITHUB_OUTPUT
   build-scan-install:
     needs: verify-portable-arm
     runs-on: windows-2025
@@ -108,6 +121,7 @@ jobs:
             if ($LASTEXITCODE -ne 0 -or (Get-FileHash dist/Parallel-reproduced.exe).Hash -ne $first) { throw 'Executable reproducibility check failed' }
             Remove-Item dist/Parallel-reproduced.exe
             ./build/windows/build.ps1 -PortableOnly
+            ./build/windows/build.ps1 -PortableOnly -PortableArch arm64
           } catch { Write-Output "::error title=MSI build failed::$($_.Exception.Message)"; throw }
       - name: Defender, real MSI install, native window, repair and uninstall
         shell: pwsh
