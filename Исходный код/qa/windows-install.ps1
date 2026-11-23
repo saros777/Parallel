@@ -115,10 +115,6 @@ function Test-PortableArchive([switch]$Scan, [switch]$Arm64) {
     }
     $appZip = Join-Path $root 'dist\Parallel-5.4.20-Portable.zip'
     Compress-Archive -LiteralPath $paths -DestinationPath $appZip -Force
-    if ($Scan) {
-        Set-Content -LiteralPath $appZip -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
-        Scan-Path $appZip
-    }
     $unpacked = Join-Path $env:RUNNER_TEMP 'parallel-without-install'
     Expand-Archive -LiteralPath $appZip -DestinationPath $unpacked
     foreach ($source in $paths) {
@@ -128,10 +124,16 @@ function Test-PortableArchive([switch]$Scan, [switch]$Arm64) {
         }
     }
     if ($Scan) {
-        foreach ($name in @('Parallel.exe','Parallel-Arm64.exe','MicrosoftEdgeWebview2Setup.exe')) {
-            Set-Content -LiteralPath (Join-Path $unpacked $name) -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
+        # Scan Internet-marked copies separately from the native window smoke test.
+        # Shell prompts for Internet-marked programs can block unattended startup.
+        $scanDir = Join-Path $env:RUNNER_TEMP 'parallel-portable-scan'
+        New-Item -ItemType Directory $scanDir | Out-Null
+        foreach ($source in @($appZip, (Join-Path $unpacked 'Parallel.exe'), (Join-Path $unpacked 'Parallel-Arm64.exe'), (Join-Path $unpacked 'MicrosoftEdgeWebview2Setup.exe'))) {
+            $marked = Copy-Item -LiteralPath $source -Destination $scanDir -PassThru
+            Set-Content -LiteralPath $marked.FullName -Stream Zone.Identifier -Value "[ZoneTransfer]`r`nZoneId=3`r`n"
+            Write-Output "::notice title=Portable scan::$(Split-Path -Leaf $source)"
+            Scan-Path $marked.FullName
         }
-        Scan-Path $unpacked
         $report.checks.applicationZipDefenderScan = 'passed; portable archive and extracted executables'
     }
     $executable = if ($Arm64) { 'Parallel-Arm64.exe' } else { 'Parallel.exe' }
